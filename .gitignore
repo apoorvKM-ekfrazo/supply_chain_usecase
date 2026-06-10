@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.env
+groq_key
+groq_key copy
+abbott_coldchain.py
+route_geometry_cache.json
+-p/
+meio_alert_history.json
