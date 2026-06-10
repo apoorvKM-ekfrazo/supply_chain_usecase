@@ -17,8 +17,19 @@ What is new in Phase 3:
 
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from dotenv import load_dotenv
-load_dotenv()   # Loads GROQ_API_KEY and ORS_API_KEY from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# Streamlit Cloud compatibility — inject st.secrets into os.environ
+try:
+    for key, value in st.secrets.items():
+        if isinstance(value, str):
+            os.environ.setdefault(key, value)
+except Exception:
+    pass
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
