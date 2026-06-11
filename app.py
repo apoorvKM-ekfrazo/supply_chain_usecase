@@ -23,13 +23,7 @@ try:
 except ImportError:
     pass
 
-# Streamlit Cloud compatibility — inject st.secrets into os.environ
-try:
-    for key, value in st.secrets.items():
-        if isinstance(value, str):
-            os.environ.setdefault(key, value)
-except Exception:
-    pass
+
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
@@ -41,6 +35,14 @@ from optimizer.metrics  import compute_metrics, compute_savings, get_weekly_proj
 from ui.map_view        import build_scenario_map, build_baseline_map, build_optimized_map
 from ui.data_onboarding import render_data_onboarding
 
+
+# Streamlit Cloud compatibility — inject st.secrets into os.environ
+try:
+    for key, value in st.secrets.items():
+        if isinstance(value, str):
+            os.environ.setdefault(key, value)
+except Exception:
+    pass
 
 def _fullscreen_button(m: "folium.Map", label: str = "🔍 Open Full Map") -> None:
     """
@@ -255,9 +257,11 @@ with st.sidebar:
     st.markdown("---")
 
     # Groq API key input — optional, enables LLM explanations
+    # NEW
     groq_key = st.text_input(
         "Groq API Key (for AI explanations)",
-        value=os.environ.get("GROQ_API_KEY", ""),
+        value="",
+        placeholder="✓ Configured" if os.environ.get("GROQ_API_KEY") else "Paste key here...",
         type="password",
         help="Optional. Enables the plain-English explanation panel. Get a free key at console.groq.com"
     )
@@ -267,9 +271,11 @@ with st.sidebar:
     # ORS API key — optional, enables road-following route geometry on the map.
     # Without this, routes draw as straight lines (still correct, just less visual).
     # Get a free key at openrouteservice.org → Dashboard → Tokens.
+    # NEW
     ors_key = st.text_input(
         "ORS API Key (for road geometry)",
-        value=os.environ.get("ORS_API_KEY", ""),
+        value="",
+        placeholder="✓ Configured" if os.environ.get("ORS_API_KEY") else "Paste key here...",
         type="password",
         help=(
             "Optional. Makes route lines follow actual Bengaluru roads instead of "
