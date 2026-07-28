@@ -296,7 +296,7 @@ def render_manifest_triage():
 
     with st.expander("🔗 Import from Odoo ERP", expanded=False):
         if not odoo_configured:
-            st.warning("Odoo credentials not found in .env — add ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY to enable.")
+            st.info("🔌 Odoo connection is not configured for this environment. Use the demo manifest below or upload your own file.")
         else:
             ok, msg = test_connection()
             if ok:
@@ -319,7 +319,7 @@ def render_manifest_triage():
                             st.rerun()
 
             else:
-                st.error(f"❌ {msg}")
+                st.info(f"🔌 Odoo connection unavailable — credentials may have expired. Use the demo manifest below or upload your own file.")
 
         if st.session_state.get("odoo_manifest_df") is not None:
             odoo_df_preview = st.session_state.odoo_manifest_df
