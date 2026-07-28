@@ -9,10 +9,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import bharataddress
-<<<<<<< HEAD
-=======
 from odoo_connector import fetch_odoo_manifest, test_connection
->>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
 
 ROUTABLE    = "routable"
 APPROXIMATE = "approximate"
@@ -294,8 +291,6 @@ def render_manifest_triage():
             mime="text/csv",
         )
 
-<<<<<<< HEAD
-=======
         # ── Odoo ERP import ───────────────────────────────────────────────────────────
     odoo_configured = bool(os.environ.get("ODOO_API_KEY") and os.environ.get("ODOO_USERNAME"))
 
@@ -332,7 +327,6 @@ def render_manifest_triage():
             st.dataframe(odoo_df_preview[["consignment_id","customer_name","city","weight_kg","scheduled_date"]].head(5),
                         hide_index=True)
         
->>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
     uploaded = st.file_uploader(
         "Drop your manifest CSV or Excel",
         type=["csv","xlsx"], key="triage_upload",
@@ -345,16 +339,13 @@ def render_manifest_triage():
             st.error(f"Could not read file: {e}")
             return
     else:
-<<<<<<< HEAD
         st.caption("No file — showing GMS-style demo manifest with mixed address quality.")
         df = DEMO_MANIFEST.copy()
-=======
         if st.session_state.get("odoo_manifest_df") is not None:
             df = st.session_state.odoo_manifest_df.copy()
             st.info(f"📡 Using {len(df)} orders imported from Odoo ERP.")
         else:
             df = DEMO_MANIFEST.copy()
->>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
 
     addr_col, lat_col, lng_col, weight_col = _detect_columns(df)
     ca, cl, cll = st.columns(3)
@@ -379,12 +370,9 @@ def render_manifest_triage():
         if k not in st.session_state:
             st.session_state[k] = None
 
-<<<<<<< HEAD
-=======
     if "odoo_manifest_df" not in st.session_state:
         st.session_state.odoo_manifest_df = None
 
->>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
     if st.button("🔍 Run Manifest Triage", type="primary"):
         result_df = df.copy()
         result_df["_lat_resolved"] = None if lat_col is None else result_df[lat_col].copy()
