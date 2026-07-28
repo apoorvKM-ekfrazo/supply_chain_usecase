@@ -1,5 +1,3 @@
-
-
 """
 app.py  —  Route Optimizer Demo (Phase 3)
 -----------------------------------------
@@ -17,13 +15,8 @@ What is new in Phase 3:
 
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-
+from dotenv import load_dotenv
+load_dotenv()   # Loads GROQ_API_KEY and ORS_API_KEY from .env file
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
@@ -33,16 +26,11 @@ from optimizer.baseline import run_baseline
 from optimizer.solver   import run_solver
 from optimizer.metrics  import compute_metrics, compute_savings, get_weekly_projection, format_inr
 from ui.map_view        import build_scenario_map, build_baseline_map, build_optimized_map
-from ui.data_onboarding import render_data_onboarding
+from ui.data_onboarding     import render_data_onboarding
+from ui.load_optimizer       import render_load_optimizer, render_load_copilot_sidebar
+from ui.intercity_optimizer  import render_intercity_optimizer
+from ui.manifest_triage      import render_manifest_triage
 
-
-# Streamlit Cloud compatibility — inject st.secrets into os.environ
-try:
-    for key, value in st.secrets.items():
-        if isinstance(value, str):
-            os.environ.setdefault(key, value)
-except Exception:
-    pass
 
 def _fullscreen_button(m: "folium.Map", label: str = "🔍 Open Full Map") -> None:
     """
@@ -84,14 +72,60 @@ st.set_page_config(
 with st.sidebar:
     selected_page = st.radio(
         "Navigate",
-        options=["🚚 Route Optimizer", "🏭 Network Intelligence", "📈 Demand Forecasting"],
-        index=0,
+        options=[
+            "📋 Manifest Triage",
+            "🚛 Intercity Load Optimiser",
+            "🏙️ Intracity Load Optimisation",
+            "🚚 Route Optimizer",
+            "🏭 Network Intelligence",
+            "📈 Demand Forecasting",
+        ],
+        index=3,
         key="page_nav",
         label_visibility="collapsed",
     )
     st.markdown("---")
 
-# Find the existing routing block and insert the Demand Forecasting check hook:
+if selected_page == "📋 Manifest Triage":
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#1A237E,#283593);
+                color:white;padding:16px 22px;border-radius:10px;margin-bottom:16px">
+        <div style="font-size:22px;font-weight:700">📋 Manifest Triage</div>
+        <div style="font-size:13px;opacity:0.85;margin-top:4px">
+        Group consignments by destination corridor · Classify address quality · Flag for intercity dispatch
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    render_manifest_triage()
+    st.stop()
+
+if selected_page == "🚛 Intercity Load Optimiser":
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#1A237E,#283593);
+                color:white;padding:16px 22px;border-radius:10px;margin-bottom:16px">
+        <div style="font-size:22px;font-weight:700">🚛 Intercity Load Optimiser</div>
+        <div style="font-size:13px;opacity:0.85;margin-top:4px">
+        Vehicle sizing per corridor · Spare capacity calculation · Co-loading opportunity alerts
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    render_intercity_optimizer()
+    st.stop()
+
+if selected_page == "🏙️ Intracity Load Optimisation":
+    render_load_copilot_sidebar()
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#1A237E,#283593);
+                color:white;padding:16px 22px;border-radius:10px;margin-bottom:16px">
+        <div style="font-size:22px;font-weight:700">🏙️ Intracity Load Optimisation</div>
+        <div style="font-size:13px;opacity:0.85;margin-top:4px">
+        Vehicle fit analysis · Volumetric billing · AI load advisory
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    render_load_optimizer()
+    st.stop()
+
 if selected_page == "🏭 Network Intelligence":
     from meio.meio_page import render_meio_page
     render_meio_page()
@@ -225,963 +259,860 @@ def blended_fuel_cost(vdf):
 default_fc = blended_fuel_cost(vehicles)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## Configuration")
-    st.markdown("---")
-    st.markdown("### Scenario")
-    st.markdown(f"**City:** Bengaluru, Karnataka")
-    st.markdown(f"**Depot:** {depot['name']}")
-    st.markdown(
-        f"**Stops:** {summary['total_stops']} | "
-        f"**Priority:** {summary['priority_stops']} | "
-        f"**Tight:** {summary['tight_windows']}"
-    )
-    st.markdown("---")
-    st.markdown("### Fleet")
-    for _, v in vehicles.iterrows():
-        fc = VEHICLE_FUEL_COST[v["type"]]
-        st.markdown(f"**{v['name']}** · {v['capacity_kg']} kg · _{v['type']}_ · ₹{fc}/km")
-
-    st.markdown("---")
-    st.markdown("### Cost Parameters")
-    st.caption("Fuel cost pre-filled from real Indian diesel/petrol data.")
-    fuel_cost_per_km = st.slider("Blended fuel cost (₹/km)", 2.0, 20.0, float(default_fc), 0.1)
-    hourly_wage      = st.slider("Driver wage (₹/hour)", 50, 400, 150, 10,
-                                  help="Overtime at 1.5× per Indian labour law")
-    co2_per_km       = st.slider("CO₂ factor (kg/km)", 0.10, 0.35, 0.21, 0.01)
-
-    st.session_state.fuel_cost_per_km = fuel_cost_per_km
-    st.session_state.hourly_wage      = hourly_wage
-    st.session_state.co2_per_km       = co2_per_km
-
-    st.markdown("---")
-
-    # Groq API key input — optional, enables LLM explanations
-    # NEW
-    groq_key = st.text_input(
-        "Groq API Key (for AI explanations)",
-        value="",
-        placeholder="✓ Configured" if os.environ.get("GROQ_API_KEY") else "Paste key here...",
-        type="password",
-        help="Optional. Enables the plain-English explanation panel. Get a free key at console.groq.com"
-    )
-    if groq_key:
-        os.environ["GROQ_API_KEY"] = groq_key
-
-    # ORS API key — optional, enables road-following route geometry on the map.
-    # Without this, routes draw as straight lines (still correct, just less visual).
-    # Get a free key at openrouteservice.org → Dashboard → Tokens.
-    # NEW
-    ors_key = st.text_input(
-        "ORS API Key (for road geometry)",
-        value="",
-        placeholder="✓ Configured" if os.environ.get("ORS_API_KEY") else "Paste key here...",
-        type="password",
-        help=(
-            "Optional. Makes route lines follow actual Bengaluru roads instead of "
-            "straight lines. Free at openrouteservice.org — Dashboard → Tokens."
-        ),
-    )
-    if ors_key:
-        os.environ["ORS_API_KEY"] = ors_key
-
-    st.markdown("---")
-    st.markdown("### Optimisation Objective")
-    st.caption(
-        "**Cost** minimises total distance — routes cluster into tight zones. "
-        "**Time** minimises total travel + service time — vehicles may cross "
-        "zones if it saves meaningful minutes. Run both to compare."
-    )
-    objective = st.radio(
-        "Optimise for:",
-        options=["cost", "time"],
-        format_func=lambda x: "💰 Minimise Cost (distance)" if x == "cost"
-                               else "⏱ Minimise Time",
-        index=0 if st.session_state.objective == "cost" else 1,
-        horizontal=True,
-        key="objective_radio",
-    )
-    st.session_state.objective = objective
-
-    st.markdown("---")
-    run_btn = st.button(
-        f"Run Optimization ({'Cost' if objective == 'cost' else 'Time'})",
-        type="primary",
-        width='stretch',
-        help="Runs OR-Tools VRP solver — allow up to 60 seconds"
-    )
-
-    if st.session_state.optimized:
-        modes_run = []
-        if st.session_state.result_cost: modes_run.append("Cost")
-        if st.session_state.result_time: modes_run.append("Time")
-        st.success(f"Complete: {' + '.join(modes_run)}")
-        if st.button("Reset", width='stretch'):
-            for k in ["optimized","baseline_result","opt_metrics","base_metrics",
-                      "savings","explanations","result_cost","result_time",
-                      "metrics_cost","metrics_time","insertion_result",
-                      "insertion_confirmed","insertion_stops_df",
-                      "insertion_result_obj","anim_frames","anim_playing",
-                      "adj_result","adj_status","adj_validation",
-                      "adj_geometry","insertion_geometry","geometry_cache","vehicle_depots",
-                      "single_depot_baseline","meio_accepted_depots","data_onboarding_complete","data_summary",
-                      "network_decision","meio_prediction","meio_second_depot"]:
-                st.session_state[k] = None
-            st.rerun()
-
-    st.markdown("---")
-    st.caption("Phase 3 of 4 — Route lines + AI explanations active")
-
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="header-bar">
-    <h2 style="margin:0">🚚 Route Optimizer — Bengaluru</h2>
-    <p style="margin:4px 0 0 0; opacity:0.85">
-        AI-powered last-mile delivery optimization · Demo v0.3 (Phase 3)
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# ── Data onboarding gate ────────────────────────────────────────────────────────
-# render_data_onboarding() shows the upload/demo card and returns True only
-# once the client has clicked "Proceed". Until then, nothing below renders.
-_onboarding_done = render_data_onboarding()
-if not _onboarding_done:
-    st.stop()
-
-
-c1,c2,c3,c4,c5,c6 = st.columns(6)
-c1.metric("Total Stops",    summary["total_stops"])
-c2.metric("🔵 Flexible",    int((stops_df["window_label"] == "Flexible").sum()))
-c3.metric("🟡 Tight Windows", summary["tight_windows"])
-c4.metric("🟠 Priority",    summary["priority_stops"])
-c5.metric("🔴 Slow Clients", summary["slow_clients"])
-c6.metric("Fleet Capacity", f"{vehicles['capacity_kg'].sum()} kg")
-st.markdown("---")
-
-# ── Run optimization ──────────────────────────────────────────────────────────
-if run_btn:
-    with st.spinner("Running baseline routing..."):
-        bl = run_baseline(stops_df, vehicles, depot)
-        st.session_state.baseline_result = bl
-
-    obj_label = "Cost (distance)" if objective == "cost" else "Time"
-    # Determine the depot(s) to use for this run.
-    # When the MEIO "Optimise Routes with This Network" button has been pressed,
-    # meio_second_depot is populated in session state and we run a two-depot VRP:
-    # the first 3 vehicles depart from the original Bommanahalli depot, the
-    # remaining 2 depart from the MEIO-recommended second warehouse location.
-    accepted_depots_for_run = st.session_state.get("meio_accepted_depots") or []
-    pending_depot_for_run   = st.session_state.get("meio_second_depot")
-    all_extra = accepted_depots_for_run + (
-        [pending_depot_for_run]
-        if pending_depot_for_run and pending_depot_for_run not in accepted_depots_for_run
-        else []
-    )
-
-    if all_extra:
-        vehicle_depots = []
-        n_vehicles     = len(vehicles)
-        n_extra        = len(all_extra)
-        # Distribute vehicles across depots evenly
-        vehicles_per_depot = max(1, n_vehicles // (n_extra + 1))
-        for i in range(n_vehicles):
-            # First vehicles_per_depot go to original depot, then distribute to extras
-            depot_idx = min(i // vehicles_per_depot, n_extra)
-            vehicle_depots.append(depot if depot_idx == 0 else all_extra[depot_idx - 1])
-    else:
-        vehicle_depots = None
-
-    with st.spinner(f"OR-Tools solver running — objective: {obj_label} (up to 60 seconds)..."):
-        opt = run_solver(
-            stops_df, vehicles, depot,
-            objective=objective,
-            vehicle_depots=vehicle_depots,
-        )
-        if opt is None:
-            st.error("Solver found no feasible solution.")
-            st.stop()
-        # Store in the shared slot (drives the main display)
-        st.session_state.optimized       = opt
-        st.session_state.vehicle_depots  = vehicle_depots  # None or list for two-depot mode
-
-        # Always save a single-depot baseline when running without extra depots.
-        # This is the correct place to do it — in the run handler, not in the
-        # trigger block — because the trigger fires on page load before the user
-        # has clicked Run, so it cannot guarantee a result exists yet.
-        # CHANGE TO (only sets baseline if not yet established):
-        if vehicle_depots is None and st.session_state.single_depot_baseline is None:
-            st.session_state.single_depot_baseline = opt
-            st.session_state.network_decision      = None  # clear any stale verdict
-        # Also store in the mode-specific slot (drives the comparison panel)
-        if objective == "cost":
-            st.session_state.result_cost = opt
-        else:
-            st.session_state.result_time = opt
-
-    base_m = compute_metrics(
-        bl, total_stops=len(stops_df),
-        fuel_cost_per_km=fuel_cost_per_km,
-        hourly_wage_inr=hourly_wage, co2_per_km=co2_per_km,
-    )
-    opt_m = compute_metrics(
-        opt, total_stops=len(stops_df),
-        fuel_cost_per_km=fuel_cost_per_km,
-        hourly_wage_inr=hourly_wage, co2_per_km=co2_per_km,
-    )
-    st.session_state.base_metrics = base_m
-    st.session_state.opt_metrics  = opt_m
-    st.session_state.savings      = compute_savings(opt_m, base_m)
-
-    # Store mode-specific metrics for the comparison panel
-    if objective == "cost":
-        st.session_state.metrics_cost = opt_m
-    else:
-        st.session_state.metrics_time = opt_m
-
-    with st.spinner("Generating AI explanations (Groq)..."):
-        st.session_state.explanations = generate_all_explanations(
-            opt, bl, stops_df, depot
-        )
-
-    # Fetch road geometry from OpenRouteService if an API key is available.
-    # This runs AFTER the solver so it never blocks the optimization result.
-    # One API call per active vehicle (5 calls max), results cached in session state.
-    ors_api_key = os.environ.get("ORS_API_KEY", "").strip()
-    if ors_api_key:
-        from ui.road_geometry import fetch_all_route_geometries, estimate_call_count
-        n_calls = estimate_call_count(opt)
-        with st.spinner(
-            f"Fetching road geometry from OpenRouteService "
-            f"({n_calls} API calls, ~{n_calls * 2}s)..."
-        ):
-            st.session_state.geometry_cache = fetch_all_route_geometries(
-                opt, stops_df, depot, vehicles, api_key=ors_api_key
-            )
-    else:
-        st.session_state.geometry_cache = None
-
-    st.rerun()
-
-# ── Filters ───────────────────────────────────────────────────────────────────
-# ── Map filter pill row ───────────────────────────────────────────────────────
-# These pills live above both maps so the connection between clicking a type
-# and seeing the map respond is spatially obvious. Multi-select means a client
-# can combine types (e.g. Priority + Tight Window together).
-# When nothing is selected, all stops are shown — narrowing on selection.
-
-STOP_TYPES = {
-    "🔵 Flexible":     lambda df: df["window_label"] == "Flexible",
-    "🟡 Tight Window": lambda df: df["window_label"] != "Flexible",
-    "🟠 Priority":     lambda df: df["is_priority"] == True,
-    "🔴 Slow Client":  lambda df: df["is_slow_client"] == True,
-}
-
-selected_types = st.pills(
-    "Filter stops by type — select one or more, or leave blank to show all",
-    options=list(STOP_TYPES.keys()),
-    selection_mode="multi",
-    default=None,
-    key="stop_type_filter",
-)
-
-# Build the filtered DataFrame using OR logic across all selected types.
-# OR logic means: show a stop if it matches ANY of the selected pills.
-# AND logic would show stops matching ALL selected types simultaneously —
-# which would produce near-empty maps since most stops belong to only one type.
-display_df = stops_df.copy()
-if selected_types:
-    combined_mask = pd.Series(False, index=display_df.index)
-    for label in selected_types:
-        combined_mask = combined_mask | STOP_TYPES[label](display_df)
-    display_df = display_df[combined_mask]
-
-# Show a small count so the client can see how many stops match the filter
-if selected_types:
-    st.caption(
-        f"Showing **{len(display_df)}** of {len(stops_df)} stops "
-        f"matching: {', '.join(selected_types)}"
-    )
-
-# ── PRE-OPTIMIZATION VIEW ─────────────────────────────────────────────────────
-if st.session_state.optimized is None:
-    st.markdown("### Delivery Scenario — Bengaluru")
-    st.caption("120 stops across 9 zones. Press **Run Optimization** in the sidebar.")
-    col_map, col_tbl = st.columns([3,1])
-    with col_map:
-        m = build_scenario_map(display_df, depot)
-        st_folium(m, width=None, height=560, returned_objects=[])
-    with col_tbl:
-        st.markdown("#### Stops by Zone")
-        zone_df = (
-            stops_df.groupby("zone")
-            .agg(Stops=("stop_id","count"),
-                 Priority=("is_priority","sum"),
-                 Tight=("window_label", lambda x:(x!="Flexible").sum()),
-                 Load_kg=("weight_kg","sum"))
-            .reset_index().sort_values("Stops", ascending=False)
-        )
-        zone_df["Load_kg"] = zone_df["Load_kg"].round(1)
-        st.dataframe(zone_df, hide_index=True, height=380)
-        total_cap  = vehicles["capacity_kg"].sum()
-        total_load = stops_df["weight_kg"].sum()
-        st.metric("Fleet Utilization", f"{total_load/total_cap*100:.1f}%")
-    st.info("Click **Run Optimization** in the sidebar to see the AI-powered routes.")
-
-# ── POST-OPTIMIZATION VIEW ────────────────────────────────────────────────────
-else:
-    bm   = st.session_state.base_metrics
-    om   = st.session_state.opt_metrics
-    sav  = st.session_state.savings
-    proj = get_weekly_projection(sav["total_saved_inr"])
-    expl = st.session_state.explanations
-
-    # ── AI Explanation — overall narrative ────────────────────────────────────
-    if expl and expl.get("overall"):
-        st.markdown(
-            f'<div class="explain-overall">'
-            f'<b>🧠 AI Analysis</b><br>{expl["overall"]}'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-    # ── Hero savings ──────────────────────────────────────────────────────────
-    st.markdown("### Optimization Results")
-    h1,h2,h3,h4 = st.columns(4)
-    with h1:
-        st.markdown(f'<div class="savings-card"><div class="val">{format_inr(sav["total_saved_inr"])}</div><div class="lbl">Total cost saved today</div></div>', unsafe_allow_html=True)
-    with h2:
-        st.markdown(f'<div class="savings-card"><div class="val">{sav["distance_km_saved"]:.0f} km</div><div class="lbl">Distance change ({sav["distance_pct_saved"]}%)</div></div>', unsafe_allow_html=True)
-    with h3:
-        st.markdown(f'<div class="savings-card"><div class="val">{sav["overtime_hrs_saved"]:.1f} hrs</div><div class="lbl">Overtime eliminated</div></div>', unsafe_allow_html=True)
-    with h4:
-        st.markdown(f'<div class="savings-card"><div class="val">{sav["co2_kg_saved"]:.1f} kg</div><div class="lbl">CO₂ saved (~{sav["co2_trees_saved"]} trees/yr)</div></div>', unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # ── Comparison table ──────────────────────────────────────────────────────
-    st.markdown("### Before vs After")
-    rows = [
-        ("Distance (km)",        bm.total_distance_km,    om.total_distance_km,    "lower"),
-        ("Fuel cost (₹)",        bm.fuel_cost_inr,        om.fuel_cost_inr,        "lower"),
-        ("Overtime (hrs)",       bm.total_overtime_hours, om.total_overtime_hours, "lower"),
-        ("Overtime cost (₹)",    bm.overtime_cost_inr,    om.overtime_cost_inr,    "lower"),
-        ("TW violations",        bm.tw_violations,        om.tw_violations,        "lower"),
-        ("On-time %",            bm.on_time_pct,          om.on_time_pct,          "higher"),
-        ("CO₂ (kg)",             bm.co2_kg,               om.co2_kg,               "lower"),
-        ("Cost per delivery ₹",  bm.cost_per_delivery,    om.cost_per_delivery,    "lower"),
-    ]
-    tbl = ""
-    for label, bval, oval, better in rows:
-        delta     = oval - bval
-        is_better = (delta < 0) if better == "lower" else (delta > 0)
-        color     = "#2e7d32" if is_better else "#c62828"
-        arrow     = "↓" if delta < 0 else "↑"
-        tbl += (
-            f"<tr><td style='padding:5px 10px'>{label}</td>"
-            f"<td style='padding:5px 10px;text-align:right'><b>{bval}</b></td>"
-            f"<td style='padding:5px 10px;text-align:right'><b>{oval}</b></td>"
-            f"<td style='padding:5px 10px;text-align:right;color:{color};"
-            f"font-weight:700'>{arrow} {abs(delta):.1f}</td></tr>"
-        )
-    st.markdown(f"""
-    <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:sans-serif">
-      <thead><tr style="background:#f0f0f0">
-        <th style="padding:7px 10px;text-align:left">Metric</th>
-        <th style="padding:7px 10px;text-align:right">Baseline</th>
-        <th style="padding:7px 10px;text-align:right">Optimized</th>
-        <th style="padding:7px 10px;text-align:right">Delta</th>
-      </tr></thead>
-      <tbody>{tbl}</tbody>
-    </table>""", unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # ── Projection ────────────────────────────────────────────────────────────
-    st.markdown("### If You Run This Every Day")
-    st.caption("Projected savings — 5-day week, 22 days/month, 264 days/year")
-    p1,p2,p3,p4 = st.columns(4)
-    for col, (period, val) in zip([p1,p2,p3,p4], proj.items()):
-        col.markdown(
-            f'<div class="proj-box"><div class="pval">{val}</div>'
-            f'<div class="plbl">{period.capitalize()}</div></div>',
-            unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-
-    # ── Maps with route lines ─────────────────────────────────────────────────
-    st.markdown("### Route Visualisation")
-    st.caption(
-        "**Left:** naive zone routing — notice the crossing lines and uneven coverage. "
-        "**Right:** optimized routes — each colour is a vehicle, numbered stops show sequence. "
-        "Grey stops (right map) could not be served within time constraints."
-    )
-    ml, mr = st.columns(2)
-    with ml:
-        st.markdown("**Baseline — Manual Zone Routing**")
-        m_base = build_baseline_map(display_df, depot)
-        st_folium(m_base, width=None, height=500,
-                  returned_objects=[], key="map_base")
-        _fullscreen_button(m_base, "🔍 Open Baseline Map")
-    with mr:
-        st.markdown("**Optimized — AI Routing**")
-        geo = st.session_state.get('geometry_cache')
-        m_opt = build_optimized_map(display_df, depot,
-                                    st.session_state.optimized, vehicles,
-                                    geometry_cache=geo,
-                                    vehicle_depots=st.session_state.get('vehicle_depots'))
-        st_folium(m_opt, width=None, height=500,
-                  returned_objects=[], key="map_opt")
-        _fullscreen_button(m_opt, "🔍 Open Optimized Map")
-
-    st.markdown("---")
-
-    # ── Cost vs Time comparison panel ─────────────────────────────────────────
-    # This appears only when the client has run BOTH modes, giving them a
-    # three-way table: Baseline vs Cost-Optimized vs Time-Optimized.
-    # This is the feature's most compelling moment — the same scenario, same
-    # constraints, visibly different numbers and routes.
-    mc = st.session_state.metrics_cost
-    mt = st.session_state.metrics_time
-
-    if mc is not None and mt is not None:
+if selected_page == "🚚 Route Optimizer":
+    with st.sidebar:
+        st.markdown("## Configuration")
         st.markdown("---")
-        st.markdown("### ⚖️ Cost Mode vs Time Mode — Head to Head")
+        st.markdown("### Scenario")
+        st.markdown(f"**City:** Bengaluru, Karnataka")
+        st.markdown(f"**Depot:** {depot['name']}")
+        st.markdown(
+            f"**Stops:** {summary['total_stops']} | "
+            f"**Priority:** {summary['priority_stops']} | "
+            f"**Tight:** {summary['tight_windows']}"
+        )
+        st.markdown("---")
+        st.markdown("### Fleet")
+        for _, v in vehicles.iterrows():
+            fc = VEHICLE_FUEL_COST[v["type"]]
+            st.markdown(f"**{v['name']}** · {v['capacity_kg']} kg · _{v['type']}_ · ₹{fc}/km")
+
+        st.markdown("---")
+        st.markdown("### Cost Parameters")
+        st.caption("Fuel cost pre-filled from real Indian diesel/petrol data.")
+        fuel_cost_per_km = st.slider("Blended fuel cost (₹/km)", 2.0, 20.0, float(default_fc), 0.1)
+        hourly_wage      = st.slider("Driver wage (₹/hour)", 50, 400, 150, 10,
+                                      help="Overtime at 1.5× per Indian labour law")
+        co2_per_km       = st.slider("CO₂ factor (kg/km)", 0.10, 0.35, 0.21, 0.01)
+
+        st.session_state.fuel_cost_per_km = fuel_cost_per_km
+        st.session_state.hourly_wage      = hourly_wage
+        st.session_state.co2_per_km       = co2_per_km
+
+        st.markdown("---")
+
+        st.markdown("### Optimisation Objective")
         st.caption(
-            "You have run both optimisation objectives. Here is the trade-off in numbers. "
-            "Neither mode is universally better — the right choice depends on whether "
-            "fuel cost or labour cost dominates your fleet's budget."
+            "**Cost** minimises total distance — routes cluster into tight zones. "
+            "**Time** minimises total travel + service time — vehicles may cross "
+            "zones if it saves meaningful minutes. Run both to compare."
+        )
+        objective = st.radio(
+            "Optimise for:",
+            options=["cost", "time"],
+            format_func=lambda x: "💰 Minimise Cost (distance)" if x == "cost"
+                                   else "⏱ Minimise Time",
+            index=0 if st.session_state.objective == "cost" else 1,
+            horizontal=True,
+            key="objective_radio",
+        )
+        st.session_state.objective = objective
+
+        st.markdown("---")
+        run_btn = st.button(
+            f"Run Optimization ({'Cost' if objective == 'cost' else 'Time'})",
+            type="primary",
+            width='stretch',
+            help="Runs OR-Tools VRP solver — allow up to 60 seconds"
         )
 
-        bm_ref = st.session_state.base_metrics
-        compare_rows = [
-            ("Distance (km)",        bm_ref.total_distance_km,    mc.total_distance_km,    mt.total_distance_km),
-            ("Fuel cost (₹)",        bm_ref.fuel_cost_inr,        mc.fuel_cost_inr,        mt.fuel_cost_inr),
-            ("Overtime (hrs)",       bm_ref.total_overtime_hours, mc.total_overtime_hours, mt.total_overtime_hours),
-            ("Overtime cost (₹)",    bm_ref.overtime_cost_inr,    mc.overtime_cost_inr,    mt.overtime_cost_inr),
-            ("TW violations",        bm_ref.tw_violations,        mc.tw_violations,        mt.tw_violations),
-            ("On-time %",            bm_ref.on_time_pct,          mc.on_time_pct,          mt.on_time_pct),
-            ("CO₂ (kg)",             bm_ref.co2_kg,               mc.co2_kg,               mt.co2_kg),
-            ("Cost per delivery ₹",  bm_ref.cost_per_delivery,    mc.cost_per_delivery,    mt.cost_per_delivery),
-            ("Total cost (₹)",       bm_ref.total_cost_inr,       mc.total_cost_inr,       mt.total_cost_inr),
-        ]
+        if st.session_state.optimized:
+            modes_run = []
+            if st.session_state.result_cost: modes_run.append("Cost")
+            if st.session_state.result_time: modes_run.append("Time")
+            st.success(f"Complete: {' + '.join(modes_run)}")
+            if st.button("Reset", width='stretch'):
+                for k in ["optimized","baseline_result","opt_metrics","base_metrics",
+                          "savings","explanations","result_cost","result_time",
+                          "metrics_cost","metrics_time","insertion_result",
+                          "insertion_confirmed","insertion_stops_df",
+                          "insertion_result_obj","anim_frames","anim_playing",
+                          "adj_result","adj_status","adj_validation",
+                          "adj_geometry","insertion_geometry","geometry_cache","vehicle_depots",
+                          "single_depot_baseline","meio_accepted_depots","data_onboarding_complete","data_summary","lo_last_preset","geocoding_done","geocoding_result_df",
+                          "network_decision","meio_prediction","meio_second_depot"]:
+                    st.session_state[k] = None
+                st.rerun()
 
-        cmp_html = """
+        st.markdown("---")
+        st.caption("Phase 3 of 4 — Route lines + AI explanations active")
+
+    # ── Header ────────────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="header-bar">
+        <h2 style="margin:0">🚚 Route Optimizer — Bengaluru</h2>
+        <p style="margin:4px 0 0 0; opacity:0.85">
+            AI-powered last-mile delivery optimization · Demo v0.3 (Phase 3)
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Data onboarding gate ────────────────────────────────────────────────────────
+    # render_data_onboarding() shows the upload/demo card and returns True only
+    # once the client has clicked "Proceed". Until then, nothing below renders.
+    _onboarding_done = render_data_onboarding()
+    if not _onboarding_done:
+        st.stop()
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    c1.metric("Total Stops",    summary["total_stops"])
+    c2.metric("🔵 Flexible",    int((stops_df["window_label"] == "Flexible").sum()))
+    c3.metric("🟡 Tight Windows", summary["tight_windows"])
+    c4.metric("🟠 Priority",    summary["priority_stops"])
+    c5.metric("🔴 Slow Clients", summary["slow_clients"])
+    c6.metric("Fleet Capacity", f"{vehicles['capacity_kg'].sum()} kg")
+    st.markdown("---")
+
+    # ── Run optimization ──────────────────────────────────────────────────────────
+    if run_btn:
+        with st.spinner("Running baseline routing..."):
+            bl = run_baseline(stops_df, vehicles, depot)
+            st.session_state.baseline_result = bl
+
+        obj_label = "Cost (distance)" if objective == "cost" else "Time"
+        # Determine the depot(s) to use for this run.
+        # When the MEIO "Optimise Routes with This Network" button has been pressed,
+        # meio_second_depot is populated in session state and we run a two-depot VRP:
+        # the first 3 vehicles depart from the original Bommanahalli depot, the
+        # remaining 2 depart from the MEIO-recommended second warehouse location.
+        accepted_depots_for_run = st.session_state.get("meio_accepted_depots") or []
+        pending_depot_for_run   = st.session_state.get("meio_second_depot")
+        all_extra = accepted_depots_for_run + (
+            [pending_depot_for_run]
+            if pending_depot_for_run and pending_depot_for_run not in accepted_depots_for_run
+            else []
+        )
+
+        if all_extra:
+            vehicle_depots = []
+            n_vehicles     = len(vehicles)
+            n_extra        = len(all_extra)
+            # Distribute vehicles across depots evenly
+            vehicles_per_depot = max(1, n_vehicles // (n_extra + 1))
+            for i in range(n_vehicles):
+                # First vehicles_per_depot go to original depot, then distribute to extras
+                depot_idx = min(i // vehicles_per_depot, n_extra)
+                vehicle_depots.append(depot if depot_idx == 0 else all_extra[depot_idx - 1])
+        else:
+            vehicle_depots = None
+
+        with st.spinner(f"OR-Tools solver running — objective: {obj_label} (up to 60 seconds)..."):
+            opt = run_solver(
+                stops_df, vehicles, depot,
+                objective=objective,
+                vehicle_depots=vehicle_depots,
+            )
+            if opt is None:
+                st.error("Solver found no feasible solution.")
+                st.stop()
+            # Store in the shared slot (drives the main display)
+            st.session_state.optimized       = opt
+            st.session_state.vehicle_depots  = vehicle_depots  # None or list for two-depot mode
+
+            # Always save a single-depot baseline when running without extra depots.
+            # This is the correct place to do it — in the run handler, not in the
+            # trigger block — because the trigger fires on page load before the user
+            # has clicked Run, so it cannot guarantee a result exists yet.
+            # CHANGE TO (only sets baseline if not yet established):
+            if vehicle_depots is None and st.session_state.single_depot_baseline is None:
+                st.session_state.single_depot_baseline = opt
+                st.session_state.network_decision      = None  # clear any stale verdict
+            # Also store in the mode-specific slot (drives the comparison panel)
+            if objective == "cost":
+                st.session_state.result_cost = opt
+            else:
+                st.session_state.result_time = opt
+
+        base_m = compute_metrics(
+            bl, total_stops=len(stops_df),
+            fuel_cost_per_km=fuel_cost_per_km,
+            hourly_wage_inr=hourly_wage, co2_per_km=co2_per_km,
+        )
+        opt_m = compute_metrics(
+            opt, total_stops=len(stops_df),
+            fuel_cost_per_km=fuel_cost_per_km,
+            hourly_wage_inr=hourly_wage, co2_per_km=co2_per_km,
+        )
+        st.session_state.base_metrics = base_m
+        st.session_state.opt_metrics  = opt_m
+        st.session_state.savings      = compute_savings(opt_m, base_m)
+
+        # Store mode-specific metrics for the comparison panel
+        if objective == "cost":
+            st.session_state.metrics_cost = opt_m
+        else:
+            st.session_state.metrics_time = opt_m
+
+        with st.spinner("Generating AI explanations (Groq)..."):
+            st.session_state.explanations = generate_all_explanations(
+                opt, bl, stops_df, depot
+            )
+
+        # Fetch road geometry from OpenRouteService if an API key is available.
+        # This runs AFTER the solver so it never blocks the optimization result.
+        # One API call per active vehicle (5 calls max), results cached in session state.
+        ors_api_key = os.environ.get("ORS_API_KEY", "").strip()
+        if ors_api_key:
+            from ui.road_geometry import fetch_all_route_geometries, estimate_call_count
+            n_calls = estimate_call_count(opt)
+            with st.spinner(
+                f"Fetching road geometry from OpenRouteService "
+                f"({n_calls} API calls, ~{n_calls * 2}s)..."
+            ):
+                st.session_state.geometry_cache = fetch_all_route_geometries(
+                    opt, stops_df, depot, vehicles, api_key=ors_api_key
+                )
+        else:
+            st.session_state.geometry_cache = None
+
+        st.rerun()
+
+    # ── Filters ───────────────────────────────────────────────────────────────────
+    # ── Map filter pill row ───────────────────────────────────────────────────────
+    # These pills live above both maps so the connection between clicking a type
+    # and seeing the map respond is spatially obvious. Multi-select means a client
+    # can combine types (e.g. Priority + Tight Window together).
+    # When nothing is selected, all stops are shown — narrowing on selection.
+
+    STOP_TYPES = {
+        "🔵 Flexible":     lambda df: df["window_label"] == "Flexible",
+        "🟡 Tight Window": lambda df: df["window_label"] != "Flexible",
+        "🟠 Priority":     lambda df: df["is_priority"] == True,
+        "🔴 Slow Client":  lambda df: df["is_slow_client"] == True,
+    }
+
+    selected_types = st.pills(
+        "Filter stops by type — select one or more, or leave blank to show all",
+        options=list(STOP_TYPES.keys()),
+        selection_mode="multi",
+        default=None,
+        key="stop_type_filter",
+    )
+
+    # Build the filtered DataFrame using OR logic across all selected types.
+    # OR logic means: show a stop if it matches ANY of the selected pills.
+    # AND logic would show stops matching ALL selected types simultaneously —
+    # which would produce near-empty maps since most stops belong to only one type.
+    display_df = stops_df.copy()
+    if selected_types:
+        combined_mask = pd.Series(False, index=display_df.index)
+        for label in selected_types:
+            combined_mask = combined_mask | STOP_TYPES[label](display_df)
+        display_df = display_df[combined_mask]
+
+    # Show a small count so the client can see how many stops match the filter
+    if selected_types:
+        st.caption(
+            f"Showing **{len(display_df)}** of {len(stops_df)} stops "
+            f"matching: {', '.join(selected_types)}"
+        )
+
+    # ── PRE-OPTIMIZATION VIEW ─────────────────────────────────────────────────────
+    if st.session_state.optimized is None:
+        st.markdown("### Delivery Scenario — Bengaluru")
+        st.caption("120 stops across 9 zones. Press **Run Optimization** in the sidebar.")
+        col_map, col_tbl = st.columns([3,1])
+        with col_map:
+            m = build_scenario_map(display_df, depot)
+            st_folium(m, width=None, height=560, returned_objects=[])
+        with col_tbl:
+            st.markdown("#### Stops by Zone")
+            zone_df = (
+                stops_df.groupby("zone")
+                .agg(Stops=("stop_id","count"),
+                     Priority=("is_priority","sum"),
+                     Tight=("window_label", lambda x:(x!="Flexible").sum()),
+                     Load_kg=("weight_kg","sum"))
+                .reset_index().sort_values("Stops", ascending=False)
+            )
+            zone_df["Load_kg"] = zone_df["Load_kg"].round(1)
+            st.dataframe(zone_df, hide_index=True, height=380)
+            total_cap  = vehicles["capacity_kg"].sum()
+            total_load = stops_df["weight_kg"].sum()
+            st.metric("Fleet Utilization", f"{total_load/total_cap*100:.1f}%")
+        st.info("Click **Run Optimization** in the sidebar to see the AI-powered routes.")
+
+    # ── POST-OPTIMIZATION VIEW ────────────────────────────────────────────────────
+    else:
+        bm   = st.session_state.base_metrics
+        om   = st.session_state.opt_metrics
+        sav  = st.session_state.savings
+        proj = get_weekly_projection(sav["total_saved_inr"])
+        expl = st.session_state.explanations
+
+        # ── AI Explanation — overall narrative ────────────────────────────────────
+        if expl and expl.get("overall"):
+            st.markdown(
+                f'<div class="explain-overall">'
+                f'<b>🧠 AI Analysis</b><br>{expl["overall"]}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # ── Hero savings ──────────────────────────────────────────────────────────
+        st.markdown("### Optimization Results")
+        h1,h2,h3,h4 = st.columns(4)
+        with h1:
+            st.markdown(f'<div class="savings-card"><div class="val">{format_inr(sav["total_saved_inr"])}</div><div class="lbl">Total cost saved today</div></div>', unsafe_allow_html=True)
+        with h2:
+            st.markdown(f'<div class="savings-card"><div class="val">{sav["distance_km_saved"]:.0f} km</div><div class="lbl">Distance change ({sav["distance_pct_saved"]}%)</div></div>', unsafe_allow_html=True)
+        with h3:
+            st.markdown(f'<div class="savings-card"><div class="val">{sav["overtime_hrs_saved"]:.1f} hrs</div><div class="lbl">Overtime eliminated</div></div>', unsafe_allow_html=True)
+        with h4:
+            st.markdown(f'<div class="savings-card"><div class="val">{sav["co2_kg_saved"]:.1f} kg</div><div class="lbl">CO₂ saved (~{sav["co2_trees_saved"]} trees/yr)</div></div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── Comparison table ──────────────────────────────────────────────────────
+        st.markdown("### Before vs After")
+        rows = [
+            ("Distance (km)",        bm.total_distance_km,    om.total_distance_km,    "lower"),
+            ("Fuel cost (₹)",        bm.fuel_cost_inr,        om.fuel_cost_inr,        "lower"),
+            ("Overtime (hrs)",       bm.total_overtime_hours, om.total_overtime_hours, "lower"),
+            ("Overtime cost (₹)",    bm.overtime_cost_inr,    om.overtime_cost_inr,    "lower"),
+            ("TW violations",        bm.tw_violations,        om.tw_violations,        "lower"),
+            ("On-time %",            bm.on_time_pct,          om.on_time_pct,          "higher"),
+            ("CO₂ (kg)",             bm.co2_kg,               om.co2_kg,               "lower"),
+            ("Cost per delivery ₹",  bm.cost_per_delivery,    om.cost_per_delivery,    "lower"),
+        ]
+        tbl = ""
+        for label, bval, oval, better in rows:
+            delta     = oval - bval
+            is_better = (delta < 0) if better == "lower" else (delta > 0)
+            color     = "#2e7d32" if is_better else "#c62828"
+            arrow     = "↓" if delta < 0 else "↑"
+            tbl += (
+                f"<tr><td style='padding:5px 10px'>{label}</td>"
+                f"<td style='padding:5px 10px;text-align:right'><b>{bval}</b></td>"
+                f"<td style='padding:5px 10px;text-align:right'><b>{oval}</b></td>"
+                f"<td style='padding:5px 10px;text-align:right;color:{color};"
+                f"font-weight:700'>{arrow} {abs(delta):.1f}</td></tr>"
+            )
+        st.markdown(f"""
         <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:sans-serif">
           <thead><tr style="background:#f0f0f0">
             <th style="padding:7px 10px;text-align:left">Metric</th>
             <th style="padding:7px 10px;text-align:right">Baseline</th>
-            <th style="padding:7px 10px;text-align:right">💰 Cost Mode</th>
-            <th style="padding:7px 10px;text-align:right">⏱ Time Mode</th>
-            <th style="padding:7px 10px;text-align:center">Winner</th>
-          </tr></thead><tbody>"""
-
-        for label, bval, cval, tval in compare_rows:
-            # Determine which mode is better for this metric
-            # For "on-time %" higher is better; for everything else lower is better
-            higher_better = "On-time" in label
-            if higher_better:
-                winner = "💰 Cost" if cval >= tval else "⏱ Time"
-                if abs(cval - tval) < 0.1: winner = "Tie"
-            else:
-                winner = "💰 Cost" if cval <= tval else "⏱ Time"
-                if abs(cval - tval) < 0.1: winner = "Tie"
-
-            c_color = "#2e7d32" if winner == "💰 Cost" else ("#555" if winner == "Tie" else "#c62828")
-            t_color = "#2e7d32" if winner == "⏱ Time" else ("#555" if winner == "Tie" else "#c62828")
-
-            cmp_html += (
-                f"<tr>"
-                f"<td style='padding:5px 10px'>{label}</td>"
-                f"<td style='padding:5px 10px;text-align:right'>{bval}</td>"
-                f"<td style='padding:5px 10px;text-align:right;color:{c_color};font-weight:600'>{cval}</td>"
-                f"<td style='padding:5px 10px;text-align:right;color:{t_color};font-weight:600'>{tval}</td>"
-                f"<td style='padding:5px 10px;text-align:center;font-size:12px'>{winner}</td>"
-                f"</tr>"
-            )
-
-        cmp_html += "</tbody></table>"
-        st.markdown(cmp_html, unsafe_allow_html=True)
+            <th style="padding:7px 10px;text-align:right">Optimized</th>
+            <th style="padding:7px 10px;text-align:right">Delta</th>
+          </tr></thead>
+          <tbody>{tbl}</tbody>
+        </table>""", unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("### 🗺️ Route Comparison — Cost Mode vs Time Mode")
+
+        # ── Projection ────────────────────────────────────────────────────────────
+        st.markdown("### If You Run This Every Day")
+        st.caption("Projected savings — 5-day week, 22 days/month, 264 days/year")
+        p1,p2,p3,p4 = st.columns(4)
+        for col, (period, val) in zip([p1,p2,p3,p4], proj.items()):
+            col.markdown(
+                f'<div class="proj-box"><div class="pval">{val}</div>'
+                f'<div class="plbl">{period.capitalize()}</div></div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("---")
+
+        # ── Maps with route lines ─────────────────────────────────────────────────
+        st.markdown("### Route Visualisation")
         st.caption(
-            "The same 120 stops, same fleet, same constraints — but notice how the "
-            "route paths differ between objectives. Cost mode creates tighter geographic "
-            "clusters. Time mode sometimes crosses zones to sequence stops more efficiently."
+            "**Left:** naive zone routing — notice the crossing lines and uneven coverage. "
+            "**Right:** optimized routes — each colour is a vehicle, numbered stops show sequence. "
+            "Grey stops (right map) could not be served within time constraints."
         )
-        cm1, cm2 = st.columns(2)
-        with cm1:
-            st.markdown("**💰 Cost Mode — Minimise Distance**")
-            st_folium(
-                build_optimized_map(display_df, depot, st.session_state.result_cost, vehicles, geometry_cache=st.session_state.get("geometry_cache")),
-                width=None, height=460, returned_objects=[], key="map_cost_compare"
+        ml, mr = st.columns(2)
+        with ml:
+            st.markdown("**Baseline — Manual Zone Routing**")
+            m_base = build_baseline_map(display_df, depot)
+            st_folium(m_base, width=None, height=500,
+                      returned_objects=[], key="map_base")
+            _fullscreen_button(m_base, "🔍 Open Baseline Map")
+        with mr:
+            st.markdown("**Optimized — AI Routing**")
+            geo = st.session_state.get('geometry_cache')
+            m_opt = build_optimized_map(display_df, depot,
+                                        st.session_state.optimized, vehicles,
+                                        geometry_cache=geo,
+                                        vehicle_depots=st.session_state.get('vehicle_depots'))
+            st_folium(m_opt, width=None, height=500,
+                      returned_objects=[], key="map_opt")
+            _fullscreen_button(m_opt, "🔍 Open Optimized Map")
+
+        st.markdown("---")
+
+        # ── Cost vs Time comparison panel ─────────────────────────────────────────
+        # This appears only when the client has run BOTH modes, giving them a
+        # three-way table: Baseline vs Cost-Optimized vs Time-Optimized.
+        # This is the feature's most compelling moment — the same scenario, same
+        # constraints, visibly different numbers and routes.
+        mc = st.session_state.metrics_cost
+        mt = st.session_state.metrics_time
+
+        if mc is not None and mt is not None:
+            st.markdown("---")
+            st.markdown("### ⚖️ Cost Mode vs Time Mode — Head to Head")
+            st.caption(
+                "You have run both optimisation objectives. Here is the trade-off in numbers. "
+                "Neither mode is universally better — the right choice depends on whether "
+                "fuel cost or labour cost dominates your fleet's budget."
             )
-        with cm2:
-            st.markdown("**⏱ Time Mode — Minimise Travel Time**")
-            st_folium(
-                build_optimized_map(display_df, depot, st.session_state.result_time, vehicles, geometry_cache=st.session_state.get("geometry_cache")),
-                width=None, height=460, returned_objects=[], key="map_time_compare"
-            )
 
-    st.markdown("---")
+            bm_ref = st.session_state.base_metrics
+            compare_rows = [
+                ("Distance (km)",        bm_ref.total_distance_km,    mc.total_distance_km,    mt.total_distance_km),
+                ("Fuel cost (₹)",        bm_ref.fuel_cost_inr,        mc.fuel_cost_inr,        mt.fuel_cost_inr),
+                ("Overtime (hrs)",       bm_ref.total_overtime_hours, mc.total_overtime_hours, mt.total_overtime_hours),
+                ("Overtime cost (₹)",    bm_ref.overtime_cost_inr,    mc.overtime_cost_inr,    mt.overtime_cost_inr),
+                ("TW violations",        bm_ref.tw_violations,        mc.tw_violations,        mt.tw_violations),
+                ("On-time %",            bm_ref.on_time_pct,          mc.on_time_pct,          mt.on_time_pct),
+                ("CO₂ (kg)",             bm_ref.co2_kg,               mc.co2_kg,               mt.co2_kg),
+                ("Cost per delivery ₹",  bm_ref.cost_per_delivery,    mc.cost_per_delivery,    mt.cost_per_delivery),
+                ("Total cost (₹)",       bm_ref.total_cost_inr,       mc.total_cost_inr,       mt.total_cost_inr),
+            ]
 
-    # ── Vehicle breakdown ─────────────────────────────────────────────────────
-    st.markdown("### Vehicle Breakdown")
-    veh_rows = []
-    for v_id, vdata in om.vehicle_breakdown.items():
-        v_info = vehicles.iloc[v_id]
-        cap    = v_info["capacity_kg"]
-        util   = round(vdata["load_kg"] / cap * 100, 1) if cap > 0 else 0
-        veh_rows.append({
-            "Vehicle":       v_info["name"],
-            "Type":          v_info["type"],
-            "Stops":         vdata["stops"],
-            "Distance km":   vdata["distance_km"],
-            "Load kg":       vdata["load_kg"],
-            "Capacity kg":   cap,
-            "Utilization %": util,
-            "Fuel ₹":        vdata["fuel_cost_inr"],
-            "Overtime hrs":  vdata["overtime_hrs"],
-            "CO₂ kg":        vdata["co2_kg"],
-            "TW Violations": vdata["tw_violations"],
-        })
-    st.dataframe(pd.DataFrame(veh_rows), hide_index=True, width='stretch')
+            cmp_html = """
+            <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:sans-serif">
+              <thead><tr style="background:#f0f0f0">
+                <th style="padding:7px 10px;text-align:left">Metric</th>
+                <th style="padding:7px 10px;text-align:right">Baseline</th>
+                <th style="padding:7px 10px;text-align:right">💰 Cost Mode</th>
+                <th style="padding:7px 10px;text-align:right">⏱ Time Mode</th>
+                <th style="padding:7px 10px;text-align:center">Winner</th>
+              </tr></thead><tbody>"""
 
-    st.markdown("---")
+            for label, bval, cval, tval in compare_rows:
+                # Determine which mode is better for this metric
+                # For "on-time %" higher is better; for everything else lower is better
+                higher_better = "On-time" in label
+                if higher_better:
+                    winner = "💰 Cost" if cval >= tval else "⏱ Time"
+                    if abs(cval - tval) < 0.1: winner = "Tie"
+                else:
+                    winner = "💰 Cost" if cval <= tval else "⏱ Time"
+                    if abs(cval - tval) < 0.1: winner = "Tie"
 
-    # ── Network Decision Panel ────────────────────────────────────────────────
-    # This panel is the heart of the two-way communication loop between the
-    # Route Optimizer and the Network Intelligence (MEIO) module.
-    #
-    # When the user runs the optimizer in multi-depot mode (after clicking
-    # "Optimise Routes with This Network" on the MEIO page), this panel
-    # compares the actual simulation results against the MEIO prediction and
-    # asks the AI to give a verdict. The user can then Accept (add this depot
-    # to the permanent network) or Reject (return to MEIO for next candidate).
-    #
-    # This creates the digital twin loop:
-    #   MEIO recommends → Optimizer simulates → AI validates →
-    #   Accept/Reject → MEIO refines → repeat
-    pending_depot_panel   = st.session_state.get("meio_second_depot")
-    accepted_depots_panel = st.session_state.get("meio_accepted_depots") or []
-    single_baseline       = st.session_state.get("single_depot_baseline")
-    meio_pred             = st.session_state.get("meio_prediction")
-    current_is_two_depot  = bool(st.session_state.get("vehicle_depots"))
+                c_color = "#2e7d32" if winner == "💰 Cost" else ("#555" if winner == "Tie" else "#c62828")
+                t_color = "#2e7d32" if winner == "⏱ Time" else ("#555" if winner == "Tie" else "#c62828")
 
-    # Show the Network Decision Panel whenever we are in two-depot mode
-    # with a pending depot — whether or not a single-depot baseline exists.
-    if current_is_two_depot and pending_depot_panel:
-        from intelligence.network_decision import compute_comparison, generate_ai_verdict
-
-        st.markdown("### 🔁 Network Decision Panel")
-        st.caption(
-            "Comparing MEIO prediction vs actual simulation result. "
-            "Accept to lock in this depot permanently, or Reject and try the next candidate."
-        )
-
-        if single_baseline is None:
-            # Baseline not yet captured — guide the user to run single-depot first
-            st.warning(
-                "**Baseline not found.** To complete the comparison, please:\n"
-                "1. Click **Reset** in the sidebar to clear the current result\n"
-                "2. Run the optimisation once **without** any MEIO depots active (this captures the single-depot baseline)\n"
-                "3. Return to Network Intelligence, click the connection button again\n"
-                "4. Run the optimisation — the full comparison will appear here\n\n"
-                "Alternatively, if you want to proceed without a baseline comparison, "
-                "you can Accept or Reject the depot based on the MEIO prediction alone."
-            )
-            # Still show Accept/Reject so the user is not blocked
-            acc_col, rej_col, _ = st.columns([1, 1, 3])
-            with acc_col:
-                if st.button(f"✅ Accept {pending_depot_panel['name']}", key="ndp_accept_nobase", type="primary"):
-                    accepted = st.session_state.get("meio_accepted_depots", [])
-                    if pending_depot_panel not in accepted:
-                        accepted.append(pending_depot_panel)
-                    st.session_state.meio_accepted_depots = accepted
-                    st.session_state.meio_second_depot    = None
-                    st.session_state.network_decision     = None
-                    st.session_state.meio_prediction      = None
-                    st.rerun()
-            with rej_col:
-                if st.button("❌ Reject", key="ndp_reject_nobase"):
-                    st.session_state.meio_second_depot = None
-                    st.session_state.vehicle_depots    = None
-                    st.session_state.network_decision  = None
-                    st.session_state.meio_prediction   = None
-                    st.rerun()
-
-        else:
-
-                comparison = compute_comparison(
-                    single_result    = single_baseline,
-                    two_depot_result = st.session_state.optimized,
-                    meio_prediction  = meio_pred or {"net_annual_saving": 0, "annual_facility_cost": 0, "name": pending_depot_panel.get("name", "New Hub")},
-                    fuel_cost_per_km = fuel_cost_per_km,
-                    hourly_wage  = hourly_wage,
+                cmp_html += (
+                    f"<tr>"
+                    f"<td style='padding:5px 10px'>{label}</td>"
+                    f"<td style='padding:5px 10px;text-align:right'>{bval}</td>"
+                    f"<td style='padding:5px 10px;text-align:right;color:{c_color};font-weight:600'>{cval}</td>"
+                    f"<td style='padding:5px 10px;text-align:right;color:{t_color};font-weight:600'>{tval}</td>"
+                    f"<td style='padding:5px 10px;text-align:center;font-size:12px'>{winner}</td>"
+                    f"</tr>"
                 )
 
-                # ── Comparison table ───────────────────────────────────────────────
-                c = comparison
-                def _fmt(x, is_money=True, is_km=False, is_min=False):
-                    if is_km:  return f"{x:.1f} km"
-                    if is_min: return f"{x:.0f} min"
-                    if abs(x) >= 100_000: return f"₹{x/100_000:.1f}L"
-                    return f"₹{x:,.0f}"
+            cmp_html += "</tbody></table>"
+            st.markdown(cmp_html, unsafe_allow_html=True)
 
-                tbl_html = """
-                <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:sans-serif;margin:12px 0">
-                  <thead><tr style="background:#e8eaf6">
-                    <th style="padding:8px 10px;text-align:left">Metric</th>
-                    <th style="padding:8px 10px;text-align:right">Single Depot (Before)</th>
-                    <th style="padding:8px 10px;text-align:right">Two Depots (After)</th>
-                    <th style="padding:8px 10px;text-align:right;color:#2e7d32">Improvement</th>
-                  </tr></thead><tbody>"""
-
-                rows = [
-                    ("Total Distance",   _fmt(c["single_dist_km"],0,True),      _fmt(c["two_depot_dist_km"],0,True),      f"↓ {_fmt(c['dist_saving_km'],0,True)}"),
-                    ("Daily Op. Cost",   _fmt(c["single_daily_cost"]),           _fmt(c["two_depot_daily_cost"]),           f"↓ {_fmt(c['daily_cost_saving'])}"),
-                    ("Overtime",         _fmt(c["single_overtime_min"],0,0,True),_fmt(c["two_depot_overtime_min"],0,0,True),f"↓ {_fmt(c['overtime_saving_min'],0,0,True)}"),
-                    ("TW Violations",    str(c["single_tw_violations"]),         str(c["two_depot_tw_violations"]),         f"↓ {c['tw_viol_reduction']}"),
-                ]
-                for label, before, after, improvement in rows:
-                    tbl_html += (
-                        f"<tr><td style='padding:6px 10px'>{label}</td>"
-                        f"<td style='padding:6px 10px;text-align:right'>{before}</td>"
-                        f"<td style='padding:6px 10px;text-align:right'>{after}</td>"
-                        f"<td style='padding:6px 10px;text-align:right;color:#2e7d32;font-weight:600'>{improvement}</td></tr>"
-                    )
-                tbl_html += "</tbody></table>"
-                st.markdown(tbl_html, unsafe_allow_html=True)
-
-                # ── Financial summary ──────────────────────────────────────────────
-                fin1, fin2, fin3, fin4 = st.columns(4)
-                fin1.metric("Actual Annual Saving",   f"₹{c['actual_annual_saving']/100_000:.1f}L" if c['actual_annual_saving'] >= 100_000 else f"₹{c['actual_annual_saving']:,.0f}")
-                fin2.metric("Facility Cost/yr",       f"₹{c['annual_facility_cost']/100_000:.1f}L" if c['annual_facility_cost'] >= 100_000 else f"₹{c['annual_facility_cost']:,.0f}")
-                fin3.metric("Actual Net Saving/yr",   f"₹{c['actual_net_saving']/100_000:.1f}L"    if abs(c['actual_net_saving']) >= 100_000 else f"₹{c['actual_net_saving']:,.0f}")
-
-                # Prediction match with colour coding
-                match_colour = "#2e7d32" if c["match_pct"] >= 80 else ("#e65100" if c["match_pct"] >= 50 else "#c62828")
-                fin4.markdown(
-                    f"**Prediction Match**<br>"
-                    f"<span style='font-size:24px;font-weight:700;color:{match_colour}'>"
-                    f"{c['match_pct']:.0f}%</span>",
-                    unsafe_allow_html=True,
+            st.markdown("---")
+            st.markdown("### 🗺️ Route Comparison — Cost Mode vs Time Mode")
+            st.caption(
+                "The same 120 stops, same fleet, same constraints — but notice how the "
+                "route paths differ between objectives. Cost mode creates tighter geographic "
+                "clusters. Time mode sometimes crosses zones to sequence stops more efficiently."
+            )
+            cm1, cm2 = st.columns(2)
+            with cm1:
+                st.markdown("**💰 Cost Mode — Minimise Distance**")
+                st_folium(
+                    build_optimized_map(display_df, depot, st.session_state.result_cost, vehicles, geometry_cache=st.session_state.get("geometry_cache")),
+                    width=None, height=460, returned_objects=[], key="map_cost_compare"
+                )
+            with cm2:
+                st.markdown("**⏱ Time Mode — Minimise Travel Time**")
+                st_folium(
+                    build_optimized_map(display_df, depot, st.session_state.result_time, vehicles, geometry_cache=st.session_state.get("geometry_cache")),
+                    width=None, height=460, returned_objects=[], key="map_time_compare"
                 )
 
-                # Break-even growth projection
-                bev = comparison.get("break_even_stops")
-                if bev and bev > comparison["stops_served"]:
-                    months = comparison.get("months_to_breakeven", "?")
-                    growth_pct = int(comparison.get("monthly_growth_rate", 0.12) * 100)
-                    st.markdown(
-                        f"""
-                        <div style="background:#e3f2fd;border-left:5px solid #1565c0;
-                                    border-radius:8px;padding:14px 18px;margin:12px 0;font-size:13px">
-                            <b>📈 Break-even projection</b><br><br>
-                            At your current volume of <b>{comparison['stops_served']} stops/day</b>, 
-                            the {comparison['candidate_name']} saves 
-                            <b>₹{comparison['daily_saving_per_stop']:.2f}/stop/day</b> in routing costs — 
-                            not yet enough to cover the ₹{comparison['annual_facility_cost']/100_000:.1f}L 
-                            annual lease.<br><br>
-                            Break-even volume: <b>~{bev} stops/day</b>. 
-                            At a {growth_pct}% monthly growth rate, you reach that volume in 
-                            approximately <b>{months} months</b>. 
-                            At that point this hub moves from a cost centre to a net saving of 
-                            ₹{comparison['annual_facility_cost']/100_000:.1f}L+ per year and every 
-                            additional stop accelerates the return further.
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    # ── Fleet scaling card (inside the bev > stops_served branch) ──
-                    current_vehicles     = len(vehicles)
-                    stops_per_vehicle    = comparison["stops_served"] / max(current_vehicles, 1)
-                    n_depots             = len(st.session_state.get("meio_accepted_depots") or []) + 2
-                    improved_stops_per_v = stops_per_vehicle * (1 + 0.20 * (n_depots - 1))
-                    import math
-                    vehicles_needed  = math.ceil(bev / improved_stops_per_v)
-                    extra_vehicles   = max(0, vehicles_needed - current_vehicles)
+        st.markdown("---")
 
-                    if extra_vehicles > 0:
-                        trucks = round(extra_vehicles * 0.6)
-                        vans   = round(extra_vehicles * 0.3)
-                        bikes  = extra_vehicles - trucks - vans
-                        capex  = trucks * 600_000 + vans * 550_000 + bikes * 120_000
-                        opex   = extra_vehicles * 310_000
-                        st.markdown(
-                            f"""
-                            <div style="background:#f3e5f5;border-left:5px solid #6a1b9a;
-                                        border-radius:8px;padding:14px 18px;margin:8px 0;font-size:13px">
-                                <b>🚛 Fleet scaling required at break-even volume</b><br><br>
-                                Serving {bev} stops/day across {n_depots} depots needs 
-                                approximately <b>{vehicles_needed} vehicles</b> 
-                                (you currently have {current_vehicles}).<br><br>
-                                Suggested addition: <b>{trucks} Tata Ace</b> + 
-                                <b>{vans} Mahindra Van</b> + <b>{bikes} Courier Bike</b><br><br>
-                                One-time capex: <b>₹{capex/100_000:.1f}L</b> · 
-                                Additional annual cost: <b>₹{opex/100_000:.1f}L/yr</b><br><br>
-                                Vehicle capex is a <b>one-time investment</b> that retains 
-                                residual value — unlike the warehouse lease which is recurring.
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                elif bev == 0:
-                    st.success(
-                        f"✅ Volume already exceeds break-even ({comparison['stops_served']} stops/day). "
-                        "This hub pays for itself at current scale."
-                    )
+        # ── Vehicle breakdown ─────────────────────────────────────────────────────
+        st.markdown("### Vehicle Breakdown")
+        veh_rows = []
+        for v_id, vdata in om.vehicle_breakdown.items():
+            v_info = vehicles.iloc[v_id]
+            cap    = v_info["capacity_kg"]
+            util   = round(vdata["load_kg"] / cap * 100, 1) if cap > 0 else 0
+            veh_rows.append({
+                "Vehicle":       v_info["name"],
+                "Type":          v_info["type"],
+                "Stops":         vdata["stops"],
+                "Distance km":   vdata["distance_km"],
+                "Load kg":       vdata["load_kg"],
+                "Capacity kg":   cap,
+                "Utilization %": util,
+                "Fuel ₹":        vdata["fuel_cost_inr"],
+                "Overtime hrs":  vdata["overtime_hrs"],
+                "CO₂ kg":        vdata["co2_kg"],
+                "TW Violations": vdata["tw_violations"],
+            })
+        st.dataframe(pd.DataFrame(veh_rows), hide_index=True, width='stretch')
 
-                
+        st.markdown("---")
 
-                elif comparison.get("daily_saving_per_stop", 0) <= 0:
-                    threshold = comparison["stops_served"] * 3
-                    st.warning(
-                        f"⚠️ At current volume, this depot **increases** routing cost because "
-                        f"the fleet is split too thinly across three locations. "
-                        f"Viable from approximately **{threshold}+ stops/day** total network volume."
-                    )
+        # ── Network Decision Panel ────────────────────────────────────────────────
+        # This panel is the heart of the two-way communication loop between the
+        # Route Optimizer and the Network Intelligence (MEIO) module.
+        #
+        # When the user runs the optimizer in multi-depot mode (after clicking
+        # "Optimise Routes with This Network" on the MEIO page), this panel
+        # compares the actual simulation results against the MEIO prediction and
+        # asks the AI to give a verdict. The user can then Accept (add this depot
+        # to the permanent network) or Reject (return to MEIO for next candidate).
+        #
+        # This creates the digital twin loop:
+        #   MEIO recommends → Optimizer simulates → AI validates →
+        #   Accept/Reject → MEIO refines → repeat
+        pending_depot_panel   = st.session_state.get("meio_second_depot")
+        accepted_depots_panel = st.session_state.get("meio_accepted_depots") or []
+        single_baseline       = st.session_state.get("single_depot_baseline")
+        meio_pred             = st.session_state.get("meio_prediction")
+        current_is_two_depot  = bool(st.session_state.get("vehicle_depots"))
 
-                # ── AI Verdict ─────────────────────────────────────────────────────
-                st.markdown("**🤖 AI Analysis**")
+        # Show the Network Decision Panel whenever we are in two-depot mode
+        # with a pending depot — whether or not a single-depot baseline exists.
+        if current_is_two_depot and pending_depot_panel:
+            from intelligence.network_decision import compute_comparison, generate_ai_verdict
 
-                if st.session_state.get("network_decision") is None:
-                    with st.spinner("Generating AI verdict (Groq)..."):
-                        verdict_text = generate_ai_verdict(comparison)
-                    st.session_state.network_decision = verdict_text
-                    st.session_state.meio_comparison_data  = comparison
+            st.markdown("### 🔁 Network Decision Panel")
+            st.caption(
+                "Comparing MEIO prediction vs actual simulation result. "
+                "Accept to lock in this depot permanently, or Reject and try the next candidate."
+            )
 
-                verdict = st.session_state.network_decision
-                if verdict:
-                    # Colour-code the panel based on recommendation
-                    if "Accept" in verdict:
-                        border_colour = "#2e7d32"; bg_colour = "#e8f5e9"
-                    elif "Reject" in verdict:
-                        border_colour = "#c62828"; bg_colour = "#ffebee"
-                    else:
-                        border_colour = "#e65100"; bg_colour = "#fff3e0"
-
-                    st.markdown(
-                        f'<div style="background:{bg_colour};border-left:5px solid {border_colour};'
-                        f'border-radius:8px;padding:14px 18px;font-size:13px;line-height:1.7">'
-                        f'{verdict.replace(chr(10), "<br><br>")}'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                # ── Accept / Reject buttons ────────────────────────────────────────
-                st.markdown("")
-                acc_col, rej_col, gap_col = st.columns([1, 1, 3])
-
+            if single_baseline is None:
+                # Baseline not yet captured — guide the user to run single-depot first
+                st.warning(
+                    "**Baseline not found.** To complete the comparison, please:\n"
+                    "1. Click **Reset** in the sidebar to clear the current result\n"
+                    "2. Run the optimisation once **without** any MEIO depots active (this captures the single-depot baseline)\n"
+                    "3. Return to Network Intelligence, click the connection button again\n"
+                    "4. Run the optimisation — the full comparison will appear here\n\n"
+                    "Alternatively, if you want to proceed without a baseline comparison, "
+                    "you can Accept or Reject the depot based on the MEIO prediction alone."
+                )
+                # Still show Accept/Reject so the user is not blocked
+                acc_col, rej_col, _ = st.columns([1, 1, 3])
                 with acc_col:
-                    if st.button(
-                        f"✅ Accept — Add {pending_depot_panel['name']} to Network",
-                        type="primary", key="ndp_accept",
-                    ):
-                        # Move pending depot to accepted list
+                    if st.button(f"✅ Accept {pending_depot_panel['name']}", key="ndp_accept_nobase", type="primary"):
                         accepted = st.session_state.get("meio_accepted_depots", [])
                         if pending_depot_panel not in accepted:
                             accepted.append(pending_depot_panel)
                         st.session_state.meio_accepted_depots = accepted
-                        st.session_state.meio_second_depot    = None   # clear pending
-                        st.session_state.single_depot_baseline = st.session_state.optimized   # new baseline is now the two-depot result
-                        st.session_state.network_decision      = None   # clear for next comparison
-                        st.session_state.meio_prediction       = None
-                        st.success(
-                            f"✅ **{pending_depot_panel['name']}** accepted and added to the permanent network. "
-                            f"Return to Network Intelligence to evaluate the next candidate."
-                        )
+                        st.session_state.meio_second_depot    = None
+                        st.session_state.network_decision     = None
+                        st.session_state.meio_prediction      = None
                         st.rerun()
-
                 with rej_col:
-                    if st.button(
-                        "❌ Reject — Try Next Candidate",
-                        key="ndp_reject",
-                    ):
-                        st.session_state.meio_second_depot    = None   # clear pending (don't add to accepted)
-                        st.session_state.vehicle_depots        = None   # revert to single-depot
-                        st.session_state.network_decision      = None
-                        st.session_state.meio_prediction       = None
-                        st.warning(
-                            "Depot rejected. The routes have reverted to the previous configuration. "
-                            "Return to Network Intelligence to evaluate the next candidate."
-                        )
+                    if st.button("❌ Reject", key="ndp_reject_nobase"):
+                        st.session_state.meio_second_depot = None
+                        st.session_state.vehicle_depots    = None
+                        st.session_state.network_decision  = None
+                        st.session_state.meio_prediction   = None
                         st.rerun()
 
-                # Show already-accepted depots
-                if accepted_depots_panel:
-                    st.markdown(
-                        f"**Network so far:** {depot['name']} + "
-                        + " + ".join(d["name"] for d in accepted_depots_panel)
-                    )
-
-                st.markdown("---")
-
-    elif accepted_depots_panel:
-        # Show a compact summary if depots have been accepted but no pending comparison
-        st.markdown("### 🔁 Network Configuration")
-        st.success(
-            f"**Active network:** {depot['name']} + "
-            + " + ".join(d["name"] for d in accepted_depots_panel)
-            + ". Return to Network Intelligence to add more locations or validate further."
-        )
-        if st.button("↩ Reset to Single-Depot Network", key="ndp_reset_all"):
-            st.session_state.meio_accepted_depots  = []
-            st.session_state.meio_second_depot     = None
-            st.session_state.vehicle_depots        = None
-            st.session_state.single_depot_baseline = None
-            st.session_state.network_decision      = None
-            st.rerun()
-        st.markdown("---")
-
-    # ── Human-in-the-Loop Route Adjustment ───────────────────────────────────
-    # This section lets a dispatcher make two types of manual override:
-    #   1. Block a stop — road blocked, customer closed, access issue.
-    #      The full OR-Tools solver re-runs with that stop excluded,
-    #      re-optimising the remaining fleet. Takes ~60 seconds.
-    #   2. Reorder a vehicle's stops — local knowledge about gate timings,
-    #      narrow lanes, or a regular customer's preference. The human
-    #      sequence is accepted as-is and metrics are recalculated instantly.
-    #      No solver re-run needed — the human's judgment is the answer.
-    st.markdown("### 🔧 Dispatcher Override — Adjust Routes")
-    st.caption(
-        "Road blocked? Customer closed? Reorder based on local knowledge. "
-        "The system accepts your decision and re-optimises or recalculates accordingly."
-    )
-
-    from intelligence.route_adjuster import (
-        customer_unavailable, road_blocked,
-        apply_human_reorder, get_vehicle_stop_table
-    )
-
-    # Initialise adjustment session state
-    if "adj_result"     not in st.session_state: st.session_state.adj_result     = None
-    if "adj_status"     not in st.session_state: st.session_state.adj_status     = None
-    if "adj_validation" not in st.session_state: st.session_state.adj_validation = None
-    if "adj_geometry"   not in st.session_state: st.session_state.adj_geometry   = None
-
-    # Use the most recent result — adjusted if available, original if not
-    active_result = st.session_state.adj_result or st.session_state.optimized
-
-    adj_tabs = st.tabs(["🚫 Customer Unavailable", "🛑 Road Blocked", "🔀 Reorder Vehicle Stops"])
-
-    # ── Tab 1: Customer Unavailable ───────────────────────────────────────────
-    with adj_tabs[0]:
-        st.markdown(
-            "The customer **cannot receive delivery today** — closed, no one home, "
-            "wrong address. The stop will be removed entirely and the fleet re-optimised."
-        )
-
-        served_stops = active_result["stops_df"]
-        served_stops = served_stops[served_stops["vehicle_id"] >= 0].copy()
-
-        if served_stops.empty:
-            st.info("No served stops available.")
-        else:
-            served_merged = served_stops.merge(
-                stops_df[["stop_id", "name", "zone", "weight_kg"]], on="stop_id", how="left"
-            )
-            stop_options = {
-                f"#{int(row['stop_id'])} — {row.get('name_y', row.get('name','?'))} "
-                f"({row.get('zone_y', row.get('zone','?'))})": int(row["stop_id"])
-                for _, row in served_merged.iterrows()
-            }
-
-            cu_col1, cu_col2 = st.columns([3, 1])
-            with cu_col1:
-                cu_label = st.selectbox("Customer to mark unavailable",
-                                         options=list(stop_options.keys()),
-                                         key="cu_stop_select")
-            with cu_col2:
-                cu_reason = st.text_input("Reason", value="Customer unavailable", key="cu_reason")
-
-            if st.button("🚫 Remove Customer and Re-Optimise", type="primary", key="cu_btn",
-                          help="Re-runs the full OR-Tools solver — up to 60 seconds"):
-                with st.spinner("Re-optimising after removing customer..."):
-                    new_result, status_msg = customer_unavailable(
-                        stop_options[cu_label], active_result,
-                        stops_df, vehicles, depot, reason=cu_reason,
-                    )
-                st.session_state.adj_result     = new_result
-                st.session_state.adj_status     = status_msg
-                st.session_state.adj_validation = None
-                # Fetch road geometry for the adjusted result using the segment cache.
-                # Most segments will already be cached from the original run, so this
-                # typically makes only 1-3 new ORS calls and completes in a few seconds.
-                from ui.road_geometry import build_geometry_for_result as _bgfr
-                if os.environ.get("ORS_API_KEY", "").strip():
-                    st.session_state.adj_geometry = _bgfr(
-                        new_result, stops_df, depot, vehicles
-                    )
-                else:
-                    st.session_state.adj_geometry = None
-                st.rerun()
-
-    # ── Tab 2: Road Blocked ────────────────────────────────────────────────────
-    with adj_tabs[1]:
-        st.markdown(
-            "A **road between two stops is blocked** — construction, flooding, checkpoint. "
-            "The destination customer **still needs their delivery**. "
-            "The system finds an alternative path to reach them without dropping them."
-        )
-        st.caption(
-            "Select the stop the vehicle was coming FROM and the destination stop. "
-            "The direct road between them is penalised to near-infinity; "
-            "the solver re-routes to reach the destination via an alternative path."
-        )
-
-        served_stops_rb = active_result["stops_df"]
-        served_stops_rb = served_stops_rb[served_stops_rb["vehicle_id"] >= 0].copy()
-
-        if served_stops_rb.empty:
-            st.info("No served stops available.")
-        else:
-            served_rb_merged = served_stops_rb.merge(
-                stops_df[["stop_id", "name", "zone"]], on="stop_id", how="left"
-            )
-            rb_options = {
-                f"#{int(row['stop_id'])} — {row.get('name_y', row.get('name','?'))} "
-                f"({row.get('zone_y', row.get('zone','?'))})": int(row["stop_id"])
-                for _, row in served_rb_merged.iterrows()
-            }
-            rb_keys = list(rb_options.keys())
-
-            rb_col1, rb_col2 = st.columns(2)
-            with rb_col1:
-                rb_from_label = st.selectbox(
-                    "Coming FROM (vehicle's previous stop)",
-                    options=rb_keys, index=0, key="rb_from_select",
-                )
-            with rb_col2:
-                default_to_idx = min(1, len(rb_keys) - 1)
-                rb_to_label = st.selectbox(
-                    "Going TO (destination — still must be served)",
-                    options=rb_keys, index=default_to_idx, key="rb_to_select",
-                )
-
-            rb_description = st.text_input(
-                "What is blocking the road?", value="Road works / flooding", key="rb_description",
-            )
-
-            rb_from_id = rb_options[rb_from_label]
-            rb_to_id   = rb_options[rb_to_label]
-
-            if rb_from_id == rb_to_id:
-                st.warning("From and To stops must be different.")
             else:
-                if st.button("🛑 Block This Road and Re-Route", type="primary", key="rb_btn",
-                              help="Keeps destination stop — finds alternative path to it"):
-                    with st.spinner("Finding alternative route to reach destination... up to 60 seconds."):
-                        new_result, status_msg = road_blocked(
-                            rb_from_id, rb_to_id,
-                            active_result, stops_df, vehicles, depot,
-                            description=rb_description,
+
+                    comparison = compute_comparison(
+                        single_result    = single_baseline,
+                        two_depot_result = st.session_state.optimized,
+                        meio_prediction  = meio_pred or {"net_annual_saving": 0, "annual_facility_cost": 0, "name": pending_depot_panel.get("name", "New Hub")},
+                        fuel_cost_per_km = fuel_cost_per_km,
+                        hourly_wage  = hourly_wage,
+                    )
+
+                    # ── Comparison table ───────────────────────────────────────────────
+                    c = comparison
+                    def _fmt(x, is_money=True, is_km=False, is_min=False):
+                        if is_km:  return f"{x:.1f} km"
+                        if is_min: return f"{x:.0f} min"
+                        if abs(x) >= 100_000: return f"₹{x/100_000:.1f}L"
+                        return f"₹{x:,.0f}"
+
+                    tbl_html = """
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;font-family:sans-serif;margin:12px 0">
+                      <thead><tr style="background:#e8eaf6">
+                        <th style="padding:8px 10px;text-align:left">Metric</th>
+                        <th style="padding:8px 10px;text-align:right">Single Depot (Before)</th>
+                        <th style="padding:8px 10px;text-align:right">Two Depots (After)</th>
+                        <th style="padding:8px 10px;text-align:right;color:#2e7d32">Improvement</th>
+                      </tr></thead><tbody>"""
+
+                    rows = [
+                        ("Total Distance",   _fmt(c["single_dist_km"],0,True),      _fmt(c["two_depot_dist_km"],0,True),      f"↓ {_fmt(c['dist_saving_km'],0,True)}"),
+                        ("Daily Op. Cost",   _fmt(c["single_daily_cost"]),           _fmt(c["two_depot_daily_cost"]),           f"↓ {_fmt(c['daily_cost_saving'])}"),
+                        ("Overtime",         _fmt(c["single_overtime_min"],0,0,True),_fmt(c["two_depot_overtime_min"],0,0,True),f"↓ {_fmt(c['overtime_saving_min'],0,0,True)}"),
+                        ("TW Violations",    str(c["single_tw_violations"]),         str(c["two_depot_tw_violations"]),         f"↓ {c['tw_viol_reduction']}"),
+                    ]
+                    for label, before, after, improvement in rows:
+                        tbl_html += (
+                            f"<tr><td style='padding:6px 10px'>{label}</td>"
+                            f"<td style='padding:6px 10px;text-align:right'>{before}</td>"
+                            f"<td style='padding:6px 10px;text-align:right'>{after}</td>"
+                            f"<td style='padding:6px 10px;text-align:right;color:#2e7d32;font-weight:600'>{improvement}</td></tr>"
+                        )
+                    tbl_html += "</tbody></table>"
+                    st.markdown(tbl_html, unsafe_allow_html=True)
+
+                    # ── Financial summary ──────────────────────────────────────────────
+                    fin1, fin2, fin3, fin4 = st.columns(4)
+                    fin1.metric("Actual Annual Saving",   f"₹{c['actual_annual_saving']/100_000:.1f}L" if c['actual_annual_saving'] >= 100_000 else f"₹{c['actual_annual_saving']:,.0f}")
+                    fin2.metric("Facility Cost/yr",       f"₹{c['annual_facility_cost']/100_000:.1f}L" if c['annual_facility_cost'] >= 100_000 else f"₹{c['annual_facility_cost']:,.0f}")
+                    fin3.metric("Actual Net Saving/yr",   f"₹{c['actual_net_saving']/100_000:.1f}L"    if abs(c['actual_net_saving']) >= 100_000 else f"₹{c['actual_net_saving']:,.0f}")
+
+                    # Prediction match with colour coding
+                    match_colour = "#2e7d32" if c["match_pct"] >= 80 else ("#e65100" if c["match_pct"] >= 50 else "#c62828")
+                    fin4.markdown(
+                        f"**Prediction Match**<br>"
+                        f"<span style='font-size:24px;font-weight:700;color:{match_colour}'>"
+                        f"{c['match_pct']:.0f}%</span>",
+                        unsafe_allow_html=True,
+                    )
+
+                    # Break-even growth projection
+                    bev = comparison.get("break_even_stops")
+                    if bev and bev > comparison["stops_served"]:
+                        months = comparison.get("months_to_breakeven", "?")
+                        growth_pct = int(comparison.get("monthly_growth_rate", 0.12) * 100)
+                        st.markdown(
+                            f"""
+                            <div style="background:#e3f2fd;border-left:5px solid #1565c0;
+                                        border-radius:8px;padding:14px 18px;margin:12px 0;font-size:13px">
+                                <b>📈 Break-even projection</b><br><br>
+                                At your current volume of <b>{comparison['stops_served']} stops/day</b>, 
+                                the {comparison['candidate_name']} saves 
+                                <b>₹{comparison['daily_saving_per_stop']:.2f}/stop/day</b> in routing costs — 
+                                not yet enough to cover the ₹{comparison['annual_facility_cost']/100_000:.1f}L 
+                                annual lease.<br><br>
+                                Break-even volume: <b>~{bev} stops/day</b>. 
+                                At a {growth_pct}% monthly growth rate, you reach that volume in 
+                                approximately <b>{months} months</b>. 
+                                At that point this hub moves from a cost centre to a net saving of 
+                                ₹{comparison['annual_facility_cost']/100_000:.1f}L+ per year and every 
+                                additional stop accelerates the return further.
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        # ── Fleet scaling card (inside the bev > stops_served branch) ──
+                        current_vehicles     = len(vehicles)
+                        stops_per_vehicle    = comparison["stops_served"] / max(current_vehicles, 1)
+                        n_depots             = len(st.session_state.get("meio_accepted_depots") or []) + 2
+                        improved_stops_per_v = stops_per_vehicle * (1 + 0.20 * (n_depots - 1))
+                        import math
+                        vehicles_needed  = math.ceil(bev / improved_stops_per_v)
+                        extra_vehicles   = max(0, vehicles_needed - current_vehicles)
+
+                        if extra_vehicles > 0:
+                            trucks = round(extra_vehicles * 0.6)
+                            vans   = round(extra_vehicles * 0.3)
+                            bikes  = extra_vehicles - trucks - vans
+                            capex  = trucks * 600_000 + vans * 550_000 + bikes * 120_000
+                            opex   = extra_vehicles * 310_000
+                            st.markdown(
+                                f"""
+                                <div style="background:#f3e5f5;border-left:5px solid #6a1b9a;
+                                            border-radius:8px;padding:14px 18px;margin:8px 0;font-size:13px">
+                                    <b>🚛 Fleet scaling required at break-even volume</b><br><br>
+                                    Serving {bev} stops/day across {n_depots} depots needs 
+                                    approximately <b>{vehicles_needed} vehicles</b> 
+                                    (you currently have {current_vehicles}).<br><br>
+                                    Suggested addition: <b>{trucks} Tata Ace</b> + 
+                                    <b>{vans} Mahindra Van</b> + <b>{bikes} Courier Bike</b><br><br>
+                                    One-time capex: <b>₹{capex/100_000:.1f}L</b> · 
+                                    Additional annual cost: <b>₹{opex/100_000:.1f}L/yr</b><br><br>
+                                    Vehicle capex is a <b>one-time investment</b> that retains 
+                                    residual value — unlike the warehouse lease which is recurring.
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                    elif bev == 0:
+                        st.success(
+                            f"✅ Volume already exceeds break-even ({comparison['stops_served']} stops/day). "
+                            "This hub pays for itself at current scale."
+                        )
+
+
+
+                    elif comparison.get("daily_saving_per_stop", 0) <= 0:
+                        threshold = comparison["stops_served"] * 3
+                        st.warning(
+                            f"⚠️ At current volume, this depot **increases** routing cost because "
+                            f"the fleet is split too thinly across three locations. "
+                            f"Viable from approximately **{threshold}+ stops/day** total network volume."
+                        )
+
+                    # ── AI Verdict ─────────────────────────────────────────────────────
+                    st.markdown("**🤖 AI Analysis**")
+
+                    if st.session_state.get("network_decision") is None:
+                        with st.spinner("Generating AI verdict (Groq)..."):
+                            verdict_text = generate_ai_verdict(comparison)
+                        st.session_state.network_decision = verdict_text
+                        st.session_state.meio_comparison_data  = comparison
+
+                    verdict = st.session_state.network_decision
+                    if verdict:
+                        # Colour-code the panel based on recommendation
+                        if "Accept" in verdict:
+                            border_colour = "#2e7d32"; bg_colour = "#e8f5e9"
+                        elif "Reject" in verdict:
+                            border_colour = "#c62828"; bg_colour = "#ffebee"
+                        else:
+                            border_colour = "#e65100"; bg_colour = "#fff3e0"
+
+                        st.markdown(
+                            f'<div style="background:{bg_colour};border-left:5px solid {border_colour};'
+                            f'border-radius:8px;padding:14px 18px;font-size:13px;line-height:1.7">'
+                            f'{verdict.replace(chr(10), "<br><br>")}'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    # ── Accept / Reject buttons ────────────────────────────────────────
+                    st.markdown("")
+                    acc_col, rej_col, gap_col = st.columns([1, 1, 3])
+
+                    with acc_col:
+                        if st.button(
+                            f"✅ Accept — Add {pending_depot_panel['name']} to Network",
+                            type="primary", key="ndp_accept",
+                        ):
+                            # Move pending depot to accepted list
+                            accepted = st.session_state.get("meio_accepted_depots", [])
+                            if pending_depot_panel not in accepted:
+                                accepted.append(pending_depot_panel)
+                            st.session_state.meio_accepted_depots = accepted
+                            st.session_state.meio_second_depot    = None   # clear pending
+                            st.session_state.single_depot_baseline = st.session_state.optimized   # new baseline is now the two-depot result
+                            st.session_state.network_decision      = None   # clear for next comparison
+                            st.session_state.meio_prediction       = None
+                            st.success(
+                                f"✅ **{pending_depot_panel['name']}** accepted and added to the permanent network. "
+                                f"Return to Network Intelligence to evaluate the next candidate."
+                            )
+                            st.rerun()
+
+                    with rej_col:
+                        if st.button(
+                            "❌ Reject — Try Next Candidate",
+                            key="ndp_reject",
+                        ):
+                            st.session_state.meio_second_depot    = None   # clear pending (don't add to accepted)
+                            st.session_state.vehicle_depots        = None   # revert to single-depot
+                            st.session_state.network_decision      = None
+                            st.session_state.meio_prediction       = None
+                            st.warning(
+                                "Depot rejected. The routes have reverted to the previous configuration. "
+                                "Return to Network Intelligence to evaluate the next candidate."
+                            )
+                            st.rerun()
+
+                    # Show already-accepted depots
+                    if accepted_depots_panel:
+                        st.markdown(
+                            f"**Network so far:** {depot['name']} + "
+                            + " + ".join(d["name"] for d in accepted_depots_panel)
+                        )
+
+                    st.markdown("---")
+
+        elif accepted_depots_panel:
+            # Show a compact summary if depots have been accepted but no pending comparison
+            st.markdown("### 🔁 Network Configuration")
+            st.success(
+                f"**Active network:** {depot['name']} + "
+                + " + ".join(d["name"] for d in accepted_depots_panel)
+                + ". Return to Network Intelligence to add more locations or validate further."
+            )
+            if st.button("↩ Reset to Single-Depot Network", key="ndp_reset_all"):
+                st.session_state.meio_accepted_depots  = []
+                st.session_state.meio_second_depot     = None
+                st.session_state.vehicle_depots        = None
+                st.session_state.single_depot_baseline = None
+                st.session_state.network_decision      = None
+                st.rerun()
+            st.markdown("---")
+
+        # ── Human-in-the-Loop Route Adjustment ───────────────────────────────────
+        # This section lets a dispatcher make two types of manual override:
+        #   1. Block a stop — road blocked, customer closed, access issue.
+        #      The full OR-Tools solver re-runs with that stop excluded,
+        #      re-optimising the remaining fleet. Takes ~60 seconds.
+        #   2. Reorder a vehicle's stops — local knowledge about gate timings,
+        #      narrow lanes, or a regular customer's preference. The human
+        #      sequence is accepted as-is and metrics are recalculated instantly.
+        #      No solver re-run needed — the human's judgment is the answer.
+        st.markdown("### 🔧 Dispatcher Override — Adjust Routes")
+        st.caption(
+            "Road blocked? Customer closed? Reorder based on local knowledge. "
+            "The system accepts your decision and re-optimises or recalculates accordingly."
+        )
+
+        from intelligence.route_adjuster import (
+            customer_unavailable, road_blocked,
+            apply_human_reorder, get_vehicle_stop_table
+        )
+
+        # Initialise adjustment session state
+        if "adj_result"     not in st.session_state: st.session_state.adj_result     = None
+        if "adj_status"     not in st.session_state: st.session_state.adj_status     = None
+        if "adj_validation" not in st.session_state: st.session_state.adj_validation = None
+        if "adj_geometry"   not in st.session_state: st.session_state.adj_geometry   = None
+
+        # Use the most recent result — adjusted if available, original if not
+        active_result = st.session_state.adj_result or st.session_state.optimized
+
+        adj_tabs = st.tabs(["🚫 Customer Unavailable", "🛑 Road Blocked", "🔀 Reorder Vehicle Stops"])
+
+        # ── Tab 1: Customer Unavailable ───────────────────────────────────────────
+        with adj_tabs[0]:
+            st.markdown(
+                "The customer **cannot receive delivery today** — closed, no one home, "
+                "wrong address. The stop will be removed entirely and the fleet re-optimised."
+            )
+
+            served_stops = active_result["stops_df"]
+            served_stops = served_stops[served_stops["vehicle_id"] >= 0].copy()
+
+            if served_stops.empty:
+                st.info("No served stops available.")
+            else:
+                served_merged = served_stops.merge(
+                    stops_df[["stop_id", "name", "zone", "weight_kg"]], on="stop_id", how="left"
+                )
+                stop_options = {
+                    f"#{int(row['stop_id'])} — {row.get('name_y', row.get('name','?'))} "
+                    f"({row.get('zone_y', row.get('zone','?'))})": int(row["stop_id"])
+                    for _, row in served_merged.iterrows()
+                }
+
+                cu_col1, cu_col2 = st.columns([3, 1])
+                with cu_col1:
+                    cu_label = st.selectbox("Customer to mark unavailable",
+                                             options=list(stop_options.keys()),
+                                             key="cu_stop_select")
+                with cu_col2:
+                    cu_reason = st.text_input("Reason", value="Customer unavailable", key="cu_reason")
+
+                if st.button("🚫 Remove Customer and Re-Optimise", type="primary", key="cu_btn",
+                              help="Re-runs the full OR-Tools solver — up to 60 seconds"):
+                    with st.spinner("Re-optimising after removing customer..."):
+                        new_result, status_msg = customer_unavailable(
+                            stop_options[cu_label], active_result,
+                            stops_df, vehicles, depot, reason=cu_reason,
                         )
                     st.session_state.adj_result     = new_result
                     st.session_state.adj_status     = status_msg
                     st.session_state.adj_validation = None
+                    # Fetch road geometry for the adjusted result using the segment cache.
+                    # Most segments will already be cached from the original run, so this
+                    # typically makes only 1-3 new ORS calls and completes in a few seconds.
                     from ui.road_geometry import build_geometry_for_result as _bgfr
                     if os.environ.get("ORS_API_KEY", "").strip():
                         st.session_state.adj_geometry = _bgfr(
@@ -1191,385 +1122,457 @@ else:
                         st.session_state.adj_geometry = None
                     st.rerun()
 
-    # ── Tab 3: Reorder vehicle stops ───────────────────────────────────────────
-    with adj_tabs[2]:
-        st.markdown(
-            "Select a vehicle and edit the **Seq** numbers to set your preferred "
-            "stop order. Lower Seq = earlier in the route. "
-            "The system recalculates metrics instantly — no solver re-run needed."
-        )
-
-        v_options = {
-            vehicles.iloc[v_id]["name"]: v_id
-            for v_id in active_result["routes"]
-            if active_result["routes"][v_id]["stop_sequence"]
-        }
-
-        if not v_options:
-            st.info("Run the optimizer first to see vehicle routes.")
-        else:
-            selected_vehicle_name = st.selectbox(
-                "Select vehicle to adjust", options=list(v_options.keys()),
-                key="reorder_vehicle_select",
+        # ── Tab 2: Road Blocked ────────────────────────────────────────────────────
+        with adj_tabs[1]:
+            st.markdown(
+                "A **road between two stops is blocked** — construction, flooding, checkpoint. "
+                "The destination customer **still needs their delivery**. "
+                "The system finds an alternative path to reach them without dropping them."
             )
-            selected_v_id = v_options[selected_vehicle_name]
-            stop_table    = get_vehicle_stop_table(selected_v_id, active_result, stops_df)
+            st.caption(
+                "Select the stop the vehicle was coming FROM and the destination stop. "
+                "The direct road between them is penalised to near-infinity; "
+                "the solver re-routes to reach the destination via an alternative path."
+            )
 
-            if stop_table.empty:
-                st.info(f"{selected_vehicle_name} has no stops assigned.")
+            served_stops_rb = active_result["stops_df"]
+            served_stops_rb = served_stops_rb[served_stops_rb["vehicle_id"] >= 0].copy()
+
+            if served_stops_rb.empty:
+                st.info("No served stops available.")
             else:
-                st.caption(
-                    f"**{selected_vehicle_name}** — {len(stop_table)} stops. "
-                    "Edit **Seq** to reorder. Ties broken alphabetically."
+                served_rb_merged = served_stops_rb.merge(
+                    stops_df[["stop_id", "name", "zone"]], on="stop_id", how="left"
                 )
-                edited_table = st.data_editor(
-                    stop_table.drop(columns=["_stop_id", "Block"]),
-                    column_config={
-                        "Seq":       st.column_config.NumberColumn("Seq", min_value=1, step=1),
-                        "Stop Name": st.column_config.TextColumn("Stop Name", disabled=True),
-                        "Zone":      st.column_config.TextColumn("Zone", disabled=True),
-                        "Weight kg": st.column_config.NumberColumn("Weight kg", disabled=True),
-                        "Window":    st.column_config.TextColumn("Window", disabled=True),
-                        "ETA":       st.column_config.TextColumn("Current ETA", disabled=True),
-                        "On Time":   st.column_config.TextColumn("On Time", disabled=True),
-                    },
-                    hide_index=True, key="reorder_table", width="stretch",
-                )
+                rb_options = {
+                    f"#{int(row['stop_id'])} — {row.get('name_y', row.get('name','?'))} "
+                    f"({row.get('zone_y', row.get('zone','?'))})": int(row["stop_id"])
+                    for _, row in served_rb_merged.iterrows()
+                }
+                rb_keys = list(rb_options.keys())
 
-                if st.button("✅ Apply This Sequence", type="primary", key="reorder_btn"):
-                    edited_with_ids = edited_table.copy()
-                    edited_with_ids["_stop_id"] = stop_table["_stop_id"].values
-                    sorted_table = edited_with_ids.sort_values(
-                        by=["Seq", "Stop Name"], ascending=[True, True]
+                rb_col1, rb_col2 = st.columns(2)
+                with rb_col1:
+                    rb_from_label = st.selectbox(
+                        "Coming FROM (vehicle's previous stop)",
+                        options=rb_keys, index=0, key="rb_from_select",
                     )
-                    new_sequence = sorted_table["_stop_id"].tolist()
+                with rb_col2:
+                    default_to_idx = min(1, len(rb_keys) - 1)
+                    rb_to_label = st.selectbox(
+                        "Going TO (destination — still must be served)",
+                        options=rb_keys, index=default_to_idx, key="rb_to_select",
+                    )
 
-                    with st.spinner("Recalculating metrics for your sequence..."):
-                        new_result, validation, status_msg = apply_human_reorder(
-                            selected_v_id, new_sequence, active_result, stops_df, depot,
+                rb_description = st.text_input(
+                    "What is blocking the road?", value="Road works / flooding", key="rb_description",
+                )
+
+                rb_from_id = rb_options[rb_from_label]
+                rb_to_id   = rb_options[rb_to_label]
+
+                if rb_from_id == rb_to_id:
+                    st.warning("From and To stops must be different.")
+                else:
+                    if st.button("🛑 Block This Road and Re-Route", type="primary", key="rb_btn",
+                                  help="Keeps destination stop — finds alternative path to it"):
+                        with st.spinner("Finding alternative route to reach destination... up to 60 seconds."):
+                            new_result, status_msg = road_blocked(
+                                rb_from_id, rb_to_id,
+                                active_result, stops_df, vehicles, depot,
+                                description=rb_description,
+                            )
+                        st.session_state.adj_result     = new_result
+                        st.session_state.adj_status     = status_msg
+                        st.session_state.adj_validation = None
+                        from ui.road_geometry import build_geometry_for_result as _bgfr
+                        if os.environ.get("ORS_API_KEY", "").strip():
+                            st.session_state.adj_geometry = _bgfr(
+                                new_result, stops_df, depot, vehicles
+                            )
+                        else:
+                            st.session_state.adj_geometry = None
+                        st.rerun()
+
+        # ── Tab 3: Reorder vehicle stops ───────────────────────────────────────────
+        with adj_tabs[2]:
+            st.markdown(
+                "Select a vehicle and edit the **Seq** numbers to set your preferred "
+                "stop order. Lower Seq = earlier in the route. "
+                "The system recalculates metrics instantly — no solver re-run needed."
+            )
+
+            v_options = {
+                vehicles.iloc[v_id]["name"]: v_id
+                for v_id in active_result["routes"]
+                if active_result["routes"][v_id]["stop_sequence"]
+            }
+
+            if not v_options:
+                st.info("Run the optimizer first to see vehicle routes.")
+            else:
+                selected_vehicle_name = st.selectbox(
+                    "Select vehicle to adjust", options=list(v_options.keys()),
+                    key="reorder_vehicle_select",
+                )
+                selected_v_id = v_options[selected_vehicle_name]
+                stop_table    = get_vehicle_stop_table(selected_v_id, active_result, stops_df)
+
+                if stop_table.empty:
+                    st.info(f"{selected_vehicle_name} has no stops assigned.")
+                else:
+                    st.caption(
+                        f"**{selected_vehicle_name}** — {len(stop_table)} stops. "
+                        "Edit **Seq** to reorder. Ties broken alphabetically."
+                    )
+                    edited_table = st.data_editor(
+                        stop_table.drop(columns=["_stop_id", "Block"]),
+                        column_config={
+                            "Seq":       st.column_config.NumberColumn("Seq", min_value=1, step=1),
+                            "Stop Name": st.column_config.TextColumn("Stop Name", disabled=True),
+                            "Zone":      st.column_config.TextColumn("Zone", disabled=True),
+                            "Weight kg": st.column_config.NumberColumn("Weight kg", disabled=True),
+                            "Window":    st.column_config.TextColumn("Window", disabled=True),
+                            "ETA":       st.column_config.TextColumn("Current ETA", disabled=True),
+                            "On Time":   st.column_config.TextColumn("On Time", disabled=True),
+                        },
+                        hide_index=True, key="reorder_table", width="stretch",
+                    )
+
+                    if st.button("✅ Apply This Sequence", type="primary", key="reorder_btn"):
+                        edited_with_ids = edited_table.copy()
+                        edited_with_ids["_stop_id"] = stop_table["_stop_id"].values
+                        sorted_table = edited_with_ids.sort_values(
+                            by=["Seq", "Stop Name"], ascending=[True, True]
                         )
-                    st.session_state.adj_result     = new_result
-                    st.session_state.adj_status     = status_msg
-                    st.session_state.adj_validation = validation
-                    from ui.road_geometry import build_geometry_for_result as _bgfr
-                    if os.environ.get("ORS_API_KEY", "").strip():
-                        st.session_state.adj_geometry = _bgfr(
-                            new_result, stops_df, depot, vehicles
-                        )
-                    else:
-                        st.session_state.adj_geometry = None
-                    st.rerun()
+                        new_sequence = sorted_table["_stop_id"].tolist()
 
-    # ── Show adjustment results ────────────────────────────────────────────────
-    if st.session_state.adj_status:
-        if "⚠️" in st.session_state.adj_status:
-            st.warning(st.session_state.adj_status)
-        else:
-            st.success(st.session_state.adj_status)
+                        with st.spinner("Recalculating metrics for your sequence..."):
+                            new_result, validation, status_msg = apply_human_reorder(
+                                selected_v_id, new_sequence, active_result, stops_df, depot,
+                            )
+                        st.session_state.adj_result     = new_result
+                        st.session_state.adj_status     = status_msg
+                        st.session_state.adj_validation = validation
+                        from ui.road_geometry import build_geometry_for_result as _bgfr
+                        if os.environ.get("ORS_API_KEY", "").strip():
+                            st.session_state.adj_geometry = _bgfr(
+                                new_result, stops_df, depot, vehicles
+                            )
+                        else:
+                            st.session_state.adj_geometry = None
+                        st.rerun()
 
-    # Show time window violations from a reorder if any exist
-    if st.session_state.adj_validation:
-        v = st.session_state.adj_validation
-        vcols = st.columns(4)
-        vcols[0].metric("Distance",   f"{v['total_dist_km']} km")
-        vcols[1].metric("Total time", f"{round(v['total_time_min']/60, 1)} hrs")
-        vcols[2].metric("Overtime",   f"{round(v['overtime_min'], 0)} min")
-        vcols[3].metric("Violations", f"{len(v['violations'])}")
+        # ── Show adjustment results ────────────────────────────────────────────────
+        if st.session_state.adj_status:
+            if "⚠️" in st.session_state.adj_status:
+                st.warning(st.session_state.adj_status)
+            else:
+                st.success(st.session_state.adj_status)
 
-        if v["violations"]:
-            st.markdown("**⚠️ Time window violations in your sequence:**")
-            viol_data = [{
-                "Stop":      viol["stop_name"],
-                "Arrives":   viol["arrived"],
-                "Deadline":  viol["deadline"],
-                "Late by":   f"{viol['late_by']:.0f} min",
-            } for viol in v["violations"]]
-            st.dataframe(pd.DataFrame(viol_data), hide_index=True)
+        # Show time window violations from a reorder if any exist
+        if st.session_state.adj_validation:
+            v = st.session_state.adj_validation
+            vcols = st.columns(4)
+            vcols[0].metric("Distance",   f"{v['total_dist_km']} km")
+            vcols[1].metric("Total time", f"{round(v['total_time_min']/60, 1)} hrs")
+            vcols[2].metric("Overtime",   f"{round(v['overtime_min'], 0)} min")
+            vcols[3].metric("Violations", f"{len(v['violations'])}")
 
-    # Show adjusted map if an adjustment has been confirmed
-    if st.session_state.adj_result:
-        st.markdown("**Updated route map after dispatcher adjustment:**")
-        adj_map = build_optimized_map(
-            stops_df, depot,
-            st.session_state.adj_result, vehicles,
-            geometry_cache=st.session_state.get("adj_geometry"),
+            if v["violations"]:
+                st.markdown("**⚠️ Time window violations in your sequence:**")
+                viol_data = [{
+                    "Stop":      viol["stop_name"],
+                    "Arrives":   viol["arrived"],
+                    "Deadline":  viol["deadline"],
+                    "Late by":   f"{viol['late_by']:.0f} min",
+                } for viol in v["violations"]]
+                st.dataframe(pd.DataFrame(viol_data), hide_index=True)
+
+        # Show adjusted map if an adjustment has been confirmed
+        if st.session_state.adj_result:
+            st.markdown("**Updated route map after dispatcher adjustment:**")
+            adj_map = build_optimized_map(
+                stops_df, depot,
+                st.session_state.adj_result, vehicles,
+                geometry_cache=st.session_state.get("adj_geometry"),
+            )
+            st_folium(adj_map, width=None, height=480,
+                      returned_objects=[], key="map_after_adj")
+
+            if st.button("↩ Revert to Original Optimized Routes", key="revert_adj"):
+                st.session_state.adj_result     = None
+                st.session_state.adj_status     = None
+                st.session_state.adj_validation = None
+                st.rerun()
+
+        st.markdown("---")
+
+        st.markdown("---")
+
+        # ── Point C: Urgent Stop Insertion ────────────────────────────────────────
+        # This is the most interactive feature in the demo. A dispatcher can add a
+        # new urgent delivery mid-day and instantly see which vehicle can absorb it
+        # with the least disruption — without re-running the full 60-second solver.
+        #
+        # Design principle: the system always proposes, the human confirms.
+        # The AI finds the best insertion but never applies it automatically.
+        # This is the human-in-the-loop principle made tangible and visible.
+        st.markdown("### 📍 Add Urgent Stop — Point C")
+        st.caption(
+            "A new delivery just came in. Enter its details below and the system will "
+            "find which vehicle can absorb it with the least disruption to existing routes — "
+            "in seconds, without re-running the full optimisation."
         )
-        st_folium(adj_map, width=None, height=480,
-                  returned_objects=[], key="map_after_adj")
 
-        if st.button("↩ Revert to Original Optimized Routes", key="revert_adj"):
-            st.session_state.adj_result     = None
-            st.session_state.adj_status     = None
-            st.session_state.adj_validation = None
+        from intelligence.stop_insertion import find_best_insertion, apply_insertion
+        from data.scenario import HUBS
+
+        # Initialise insertion state if not already present
+        if "insertion_result"    not in st.session_state: st.session_state.insertion_result    = None
+        if "insertion_confirmed" not in st.session_state: st.session_state.insertion_confirmed = False
+        if "insertion_stops_df"  not in st.session_state: st.session_state.insertion_stops_df  = None
+        if "insertion_result_obj"not in st.session_state: st.session_state.insertion_result_obj= None
+        if "insertion_geometry"  not in st.session_state: st.session_state.insertion_geometry  = None
+
+        # Input form — uses columns to keep it compact
+        ins_col1, ins_col2, ins_col3 = st.columns([2, 1, 1])
+        with ins_col1:
+            ins_zone = st.selectbox(
+                "Delivery zone",
+                options=[h["name"] for h in HUBS],
+                key="ins_zone",
+                help="The system will pick a representative coordinate within this zone"
+            )
+        with ins_col2:
+            ins_weight = st.number_input(
+                "Package weight (kg)",
+                min_value=1.0, max_value=200.0, value=15.0, step=1.0,
+                key="ins_weight",
+            )
+        with ins_col3:
+            ins_window = st.selectbox(
+                "Time window",
+                options=["Flexible (any time)", "Morning (before 11am)", "Afternoon (after 12pm)"],
+                key="ins_window",
+            )
+
+        ins_col4, ins_col5 = st.columns([2, 1])
+        with ins_col4:
+            ins_name = st.text_input(
+                "Stop label (optional)",
+                value=f"Urgent — {ins_zone}",
+                key="ins_name",
+            )
+        with ins_col5:
+            ins_service = st.number_input(
+                "Service time (min)",
+                min_value=5, max_value=60, value=10, step=5,
+                key="ins_service",
+                help="How long does unloading take at this stop?"
+            )
+
+        # Map zone name to coordinates — use the hub's centre point with a small offset
+        # so urgent stops don't land exactly on top of existing stops
+        zone_coords = {h["name"]: (h["lat"] + 0.003, h["lng"] + 0.003) for h in HUBS}
+        ins_lat, ins_lng = zone_coords.get(ins_zone, (12.9716, 77.5946))
+
+        # Map time window selection to tw_start and tw_end in hours from shift start
+        window_map = {
+            "Flexible (any time)":    (0, 8, "Flexible"),
+            "Morning (before 11am)":  (0, 3, "Morning (tight)"),
+            "Afternoon (after 12pm)": (4, 7, "Afternoon (tight)"),
+        }
+        tw_start, tw_end, window_label = window_map[ins_window]
+
+        find_btn = st.button(
+            "🔍 Find Best Route for This Stop",
+            type="secondary",
+            key="find_insertion",
+            help="Runs cheapest insertion check — takes under a second"
+        )
+
+        if find_btn:
+            new_stop_attrs = {
+                "lat":              ins_lat,
+                "lng":              ins_lng,
+                "weight_kg":        ins_weight,
+                "tw_start":         tw_start,
+                "tw_end":           tw_end,
+                "window_label":     window_label,
+                "service_time_min": ins_service,
+                "name":             ins_name,
+                "zone":             ins_zone,
+            }
+            with st.spinner("Running insertion check..."):
+                ins_result = find_best_insertion(
+                    new_stop_attrs,
+                    st.session_state.optimized,
+                    stops_df,
+                    depot,
+                    vehicles,
+                )
+            st.session_state.insertion_result     = ins_result
+            st.session_state.insertion_confirmed  = False
+            st.session_state.insertion_stops_df   = None
+            st.session_state.insertion_result_obj = None
             st.rerun()
 
-    st.markdown("---")
+        # ── Show insertion result card ─────────────────────────────────────────────
+        ins_res = st.session_state.insertion_result
 
-    st.markdown("---")
+        if ins_res is not None:
+            if not ins_res["feasible"]:
+                st.error(
+                    f"**No feasible insertion found.** {ins_res['reason']} "
+                    f"Consider adding a vehicle or rescheduling this delivery."
+                )
+            else:
+                # Success card — shows the key facts the dispatcher needs to decide
+                fuel_per_km = st.session_state.get("fuel_cost_per_km", 7.23)
+                extra_fuel  = round(ins_res["extra_dist_km"] * fuel_per_km, 0)
 
-    # ── Point C: Urgent Stop Insertion ────────────────────────────────────────
-    # This is the most interactive feature in the demo. A dispatcher can add a
-    # new urgent delivery mid-day and instantly see which vehicle can absorb it
-    # with the least disruption — without re-running the full 60-second solver.
-    #
-    # Design principle: the system always proposes, the human confirms.
-    # The AI finds the best insertion but never applies it automatically.
-    # This is the human-in-the-loop principle made tangible and visible.
-    st.markdown("### 📍 Add Urgent Stop — Point C")
-    st.caption(
-        "A new delivery just came in. Enter its details below and the system will "
-        "find which vehicle can absorb it with the least disruption to existing routes — "
-        "in seconds, without re-running the full optimisation."
-    )
-
-    from intelligence.stop_insertion import find_best_insertion, apply_insertion
-    from data.scenario import HUBS
-
-    # Initialise insertion state if not already present
-    if "insertion_result"    not in st.session_state: st.session_state.insertion_result    = None
-    if "insertion_confirmed" not in st.session_state: st.session_state.insertion_confirmed = False
-    if "insertion_stops_df"  not in st.session_state: st.session_state.insertion_stops_df  = None
-    if "insertion_result_obj"not in st.session_state: st.session_state.insertion_result_obj= None
-    if "insertion_geometry"  not in st.session_state: st.session_state.insertion_geometry  = None
-
-    # Input form — uses columns to keep it compact
-    ins_col1, ins_col2, ins_col3 = st.columns([2, 1, 1])
-    with ins_col1:
-        ins_zone = st.selectbox(
-            "Delivery zone",
-            options=[h["name"] for h in HUBS],
-            key="ins_zone",
-            help="The system will pick a representative coordinate within this zone"
-        )
-    with ins_col2:
-        ins_weight = st.number_input(
-            "Package weight (kg)",
-            min_value=1.0, max_value=200.0, value=15.0, step=1.0,
-            key="ins_weight",
-        )
-    with ins_col3:
-        ins_window = st.selectbox(
-            "Time window",
-            options=["Flexible (any time)", "Morning (before 11am)", "Afternoon (after 12pm)"],
-            key="ins_window",
-        )
-
-    ins_col4, ins_col5 = st.columns([2, 1])
-    with ins_col4:
-        ins_name = st.text_input(
-            "Stop label (optional)",
-            value=f"Urgent — {ins_zone}",
-            key="ins_name",
-        )
-    with ins_col5:
-        ins_service = st.number_input(
-            "Service time (min)",
-            min_value=5, max_value=60, value=10, step=5,
-            key="ins_service",
-            help="How long does unloading take at this stop?"
-        )
-
-    # Map zone name to coordinates — use the hub's centre point with a small offset
-    # so urgent stops don't land exactly on top of existing stops
-    zone_coords = {h["name"]: (h["lat"] + 0.003, h["lng"] + 0.003) for h in HUBS}
-    ins_lat, ins_lng = zone_coords.get(ins_zone, (12.9716, 77.5946))
-
-    # Map time window selection to tw_start and tw_end in hours from shift start
-    window_map = {
-        "Flexible (any time)":    (0, 8, "Flexible"),
-        "Morning (before 11am)":  (0, 3, "Morning (tight)"),
-        "Afternoon (after 12pm)": (4, 7, "Afternoon (tight)"),
-    }
-    tw_start, tw_end, window_label = window_map[ins_window]
-
-    find_btn = st.button(
-        "🔍 Find Best Route for This Stop",
-        type="secondary",
-        key="find_insertion",
-        help="Runs cheapest insertion check — takes under a second"
-    )
-
-    if find_btn:
-        new_stop_attrs = {
-            "lat":              ins_lat,
-            "lng":              ins_lng,
-            "weight_kg":        ins_weight,
-            "tw_start":         tw_start,
-            "tw_end":           tw_end,
-            "window_label":     window_label,
-            "service_time_min": ins_service,
-            "name":             ins_name,
-            "zone":             ins_zone,
-        }
-        with st.spinner("Running insertion check..."):
-            ins_result = find_best_insertion(
-                new_stop_attrs,
-                st.session_state.optimized,
-                stops_df,
-                depot,
-                vehicles,
-            )
-        st.session_state.insertion_result     = ins_result
-        st.session_state.insertion_confirmed  = False
-        st.session_state.insertion_stops_df   = None
-        st.session_state.insertion_result_obj = None
-        st.rerun()
-
-    # ── Show insertion result card ─────────────────────────────────────────────
-    ins_res = st.session_state.insertion_result
-
-    if ins_res is not None:
-        if not ins_res["feasible"]:
-            st.error(
-                f"**No feasible insertion found.** {ins_res['reason']} "
-                f"Consider adding a vehicle or rescheduling this delivery."
-            )
-        else:
-            # Success card — shows the key facts the dispatcher needs to decide
-            fuel_per_km = st.session_state.get("fuel_cost_per_km", 7.23)
-            extra_fuel  = round(ins_res["extra_dist_km"] * fuel_per_km, 0)
-
-            st.markdown(f"""
-            <div style="background:#e8f5e9;border-left:5px solid #2e7d32;
-                        border-radius:8px;padding:16px 20px;margin:12px 0">
-                <div style="font-size:16px;font-weight:700;color:#1b5e20;margin-bottom:8px">
-                    ✅ Best insertion found — {ins_res['vehicle_name']}
+                st.markdown(f"""
+                <div style="background:#e8f5e9;border-left:5px solid #2e7d32;
+                            border-radius:8px;padding:16px 20px;margin:12px 0">
+                    <div style="font-size:16px;font-weight:700;color:#1b5e20;margin-bottom:8px">
+                        ✅ Best insertion found — {ins_res['vehicle_name']}
+                    </div>
+                    <table style="font-size:13px;width:100%;border-collapse:collapse">
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>Insert after:</b></td>
+                            <td>{ins_res['position_desc']}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>ETA at new stop:</b></td>
+                            <td>{ins_res['eta_clock']}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>Extra distance:</b></td>
+                            <td>{ins_res['extra_dist_km']} km (+₹{extra_fuel:.0f} fuel)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>Extra time:</b></td>
+                            <td>{ins_res['extra_time_min']} min added to route</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>Remaining capacity:</b></td>
+                            <td>{ins_res['capacity_remaining_after']} kg after this stop</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:4px 12px 4px 0"><b>All existing windows:</b></td>
+                            <td style="color:#2e7d32;font-weight:700">✅ Still satisfied</td>
+                        </tr>
+                    </table>
                 </div>
-                <table style="font-size:13px;width:100%;border-collapse:collapse">
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>Insert after:</b></td>
-                        <td>{ins_res['position_desc']}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>ETA at new stop:</b></td>
-                        <td>{ins_res['eta_clock']}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>Extra distance:</b></td>
-                        <td>{ins_res['extra_dist_km']} km (+₹{extra_fuel:.0f} fuel)</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>Extra time:</b></td>
-                        <td>{ins_res['extra_time_min']} min added to route</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>Remaining capacity:</b></td>
-                        <td>{ins_res['capacity_remaining_after']} kg after this stop</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:4px 12px 4px 0"><b>All existing windows:</b></td>
-                        <td style="color:#2e7d32;font-weight:700">✅ Still satisfied</td>
-                    </tr>
-                </table>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-            confirm_col, cancel_col = st.columns([1, 3])
-            with confirm_col:
-                if st.button(
-                    "✅ Confirm — Update Routes",
-                    type="primary",
-                    key="confirm_insertion",
-                    disabled=st.session_state.insertion_confirmed,
-                ):
-                    updated_result, updated_stops = apply_insertion(
-                        ins_res,
-                        st.session_state.optimized,
-                        stops_df,
-                    )
-                    st.session_state.insertion_confirmed  = True
-                    st.session_state.insertion_result_obj = updated_result
-                    st.session_state.insertion_stops_df   = updated_stops
-                    # Fetch geometry for the insertion result. The new stop (9999)
-                    # creates exactly two new segments: previous→9999 and 9999→next.
-                    # Everything else is already in the segment cache.
-                    from ui.road_geometry import build_geometry_for_result as _bgfr
-                    if os.environ.get("ORS_API_KEY", "").strip():
-                        st.session_state.insertion_geometry = _bgfr(
-                            updated_result, updated_stops, depot, vehicles
+                confirm_col, cancel_col = st.columns([1, 3])
+                with confirm_col:
+                    if st.button(
+                        "✅ Confirm — Update Routes",
+                        type="primary",
+                        key="confirm_insertion",
+                        disabled=st.session_state.insertion_confirmed,
+                    ):
+                        updated_result, updated_stops = apply_insertion(
+                            ins_res,
+                            st.session_state.optimized,
+                            stops_df,
                         )
-                    else:
-                        st.session_state.insertion_geometry = None
-                    st.rerun()
+                        st.session_state.insertion_confirmed  = True
+                        st.session_state.insertion_result_obj = updated_result
+                        st.session_state.insertion_stops_df   = updated_stops
+                        # Fetch geometry for the insertion result. The new stop (9999)
+                        # creates exactly two new segments: previous→9999 and 9999→next.
+                        # Everything else is already in the segment cache.
+                        from ui.road_geometry import build_geometry_for_result as _bgfr
+                        if os.environ.get("ORS_API_KEY", "").strip():
+                            st.session_state.insertion_geometry = _bgfr(
+                                updated_result, updated_stops, depot, vehicles
+                            )
+                        else:
+                            st.session_state.insertion_geometry = None
+                        st.rerun()
 
-            with cancel_col:
-                if st.button("✗ Cancel — Keep Original Routes", key="cancel_insertion"):
-                    st.session_state.insertion_result    = None
-                    st.session_state.insertion_confirmed = False
-                    st.rerun()
+                with cancel_col:
+                    if st.button("✗ Cancel — Keep Original Routes", key="cancel_insertion"):
+                        st.session_state.insertion_result    = None
+                        st.session_state.insertion_confirmed = False
+                        st.rerun()
 
-    # ── Show the updated map after confirmed insertion ─────────────────────────
-    if st.session_state.insertion_confirmed and st.session_state.insertion_result_obj:
-        st.success(
-            f"Route updated. **{st.session_state.insertion_result['vehicle_name']}** "
-            f"now has {st.session_state.insertion_result['total_route_stops']} stops. "
-            f"The new stop is shown in gold on the map below."
-        )
-        st.markdown("**Updated route — new stop integrated:**")
+        # ── Show the updated map after confirmed insertion ─────────────────────────
+        if st.session_state.insertion_confirmed and st.session_state.insertion_result_obj:
+            st.success(
+                f"Route updated. **{st.session_state.insertion_result['vehicle_name']}** "
+                f"now has {st.session_state.insertion_result['total_route_stops']} stops. "
+                f"The new stop is shown in gold on the map below."
+            )
+            st.markdown("**Updated route — new stop integrated:**")
 
-        # Build the updated map using the confirmed result and freshly fetched geometry
-        updated_map = build_optimized_map(
-            st.session_state.insertion_stops_df,
-            depot,
-            st.session_state.insertion_result_obj,
-            vehicles,
-            geometry_cache=st.session_state.get("insertion_geometry"),
-        )
-        st_folium(updated_map, width=None, height=480,
-                  returned_objects=[], key="map_after_insertion")
+            # Build the updated map using the confirmed result and freshly fetched geometry
+            updated_map = build_optimized_map(
+                st.session_state.insertion_stops_df,
+                depot,
+                st.session_state.insertion_result_obj,
+                vehicles,
+                geometry_cache=st.session_state.get("insertion_geometry"),
+            )
+            st_folium(updated_map, width=None, height=480,
+                      returned_objects=[], key="map_after_insertion")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # ── LLM Explanation Panel ─────────────────────────────────────────────────
-    # This is the differentiating feature — plain English explanations of every
-    # routing decision, including why specific stops could not be served.\
-    st.markdown("### 🧠 Why Did the System Make These Decisions?")
+        # ── LLM Explanation Panel ─────────────────────────────────────────────────
+        # This is the differentiating feature — plain English explanations of every
+        # routing decision, including why specific stops could not be served.\
+        st.markdown("### 🧠 Why Did the System Make These Decisions?")
 
-    unserved_df = st.session_state.optimized["stops_df"]
-    unserved_df = unserved_df[unserved_df["vehicle_id"] == -1]
+        unserved_df = st.session_state.optimized["stops_df"]
+        unserved_df = unserved_df[unserved_df["vehicle_id"] == -1]
 
-    if unserved_df.empty:
-        st.success("✅ All 120 stops were successfully served. No explanations needed.")
-    else:
-        st.warning(
-            f"⚠️ {len(unserved_df)} stop(s) could not be served. "
-            f"See explanations below."
-        )
-
-        if expl and expl.get("unserved"):
-            for item in expl["unserved"]:
-                with st.expander(
-                    f"❓ Why was **{item['stop_name']}** ({item['zone']}) not served?",
-                    expanded=True
-                ):
-                    st.markdown(
-                        f'<div class="explain-card">{item["explanation"]}</div>',
-                        unsafe_allow_html=True
-                    )
-
-                    # Show the raw diagnosis numbers in a collapsed sub-expander
-                    # so technically curious clients can verify the reasoning
-                    with st.expander("See technical details", expanded=False):
-                        d = item["diagnosis"]
-                        st.markdown(f"""
-                        | Detail | Value |
-                        |--------|-------|
-                        | Distance from depot | {d['dist_from_depot_km']} km |
-                        | Minimum travel time | {d['min_travel_min']} min |
-                        | Window closes in | {d['time_gap_min']} min from shift start |
-                        | Primary constraint | {d['primary_reason'].replace('_', ' ')} |
-                        | Vehicles with spare capacity | {len(d['capacity_options'])} |
-                        """)
+        if unserved_df.empty:
+            st.success("✅ All 120 stops were successfully served. No explanations needed.")
         else:
-            # Fallback if Groq key not set — show structured data without prose
-            st.info(
-                "Add your Groq API key in the sidebar to enable plain-English "
-                "explanations. Showing technical summary instead."
+            st.warning(
+                f"⚠️ {len(unserved_df)} stop(s) could not be served. "
+                f"See explanations below."
             )
-            st.dataframe(
-                unserved_df[["stop_id","zone","weight_kg","window_label"]].rename(
-                    columns={"stop_id":"Stop ID","zone":"Zone",
-                             "weight_kg":"Weight (kg)","window_label":"Window"}
-                ),
-                hide_index=True
-            )
+
+            if expl and expl.get("unserved"):
+                for item in expl["unserved"]:
+                    with st.expander(
+                        f"❓ Why was **{item['stop_name']}** ({item['zone']}) not served?",
+                        expanded=True
+                    ):
+                        st.markdown(
+                            f'<div class="explain-card">{item["explanation"]}</div>',
+                            unsafe_allow_html=True
+                        )
+
+                        # Show the raw diagnosis numbers in a collapsed sub-expander
+                        # so technically curious clients can verify the reasoning
+                        with st.expander("See technical details", expanded=False):
+                            d = item["diagnosis"]
+                            st.markdown(f"""
+                            | Detail | Value |
+                            |--------|-------|
+                            | Distance from depot | {d['dist_from_depot_km']} km |
+                            | Minimum travel time | {d['min_travel_min']} min |
+                            | Window closes in | {d['time_gap_min']} min from shift start |
+                            | Primary constraint | {d['primary_reason'].replace('_', ' ')} |
+                            | Vehicles with spare capacity | {len(d['capacity_options'])} |
+                            """)
+            else:
+                # Fallback if Groq key not set — show structured data without prose
+                st.info(
+                    "Add your Groq API key in the sidebar to enable plain-English "
+                    "explanations. Showing technical summary instead."
+                )
+                st.dataframe(
+                    unserved_df[["stop_id","zone","weight_kg","window_label"]].rename(
+                        columns={"stop_id":"Stop ID","zone":"Zone",
+                                 "weight_kg":"Weight (kg)","window_label":"Window"}
+                    ),
+                    hide_index=True
+                )
