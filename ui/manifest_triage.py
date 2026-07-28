@@ -9,6 +9,10 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import bharataddress
+<<<<<<< HEAD
+=======
+from odoo_connector import fetch_odoo_manifest, test_connection
+>>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
 
 ROUTABLE    = "routable"
 APPROXIMATE = "approximate"
@@ -290,6 +294,45 @@ def render_manifest_triage():
             mime="text/csv",
         )
 
+<<<<<<< HEAD
+=======
+        # ── Odoo ERP import ───────────────────────────────────────────────────────────
+    odoo_configured = bool(os.environ.get("ODOO_API_KEY") and os.environ.get("ODOO_USERNAME"))
+
+    with st.expander("🔗 Import from Odoo ERP", expanded=False):
+        if not odoo_configured:
+            st.warning("Odoo credentials not found in .env — add ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_API_KEY to enable.")
+        else:
+            ok, msg = test_connection()
+            if ok:
+                st.success(f"✅ {msg}")
+                col_imp, col_clear = st.columns([2, 1])
+                with col_imp:
+                    if st.button("📥 Import Live Delivery Orders from Odoo", type="primary", key="odoo_import_btn"):
+                        with st.spinner("Fetching delivery orders from Odoo..."):
+                            odoo_df = fetch_odoo_manifest()
+                        if odoo_df is not None and not odoo_df.empty:
+                            st.session_state.odoo_manifest_df = odoo_df
+                            st.success(f"✅ Imported {len(odoo_df)} delivery orders from Odoo.")
+                            st.rerun()
+                        else:
+                            st.error("No pending delivery orders found in Odoo.")
+                with col_clear:
+                    if st.session_state.get("odoo_manifest_df") is not None:
+                        if st.button("✕ Clear Odoo Data", key="odoo_clear_btn"):
+                            st.session_state.odoo_manifest_df = None
+                            st.rerun()
+
+            else:
+                st.error(f"❌ {msg}")
+
+        if st.session_state.get("odoo_manifest_df") is not None:
+            odoo_df_preview = st.session_state.odoo_manifest_df
+            st.markdown(f"**{len(odoo_df_preview)} orders loaded from Odoo** — will be used as manifest input.")
+            st.dataframe(odoo_df_preview[["consignment_id","customer_name","city","weight_kg","scheduled_date"]].head(5),
+                        hide_index=True)
+        
+>>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
     uploaded = st.file_uploader(
         "Drop your manifest CSV or Excel",
         type=["csv","xlsx"], key="triage_upload",
@@ -302,8 +345,16 @@ def render_manifest_triage():
             st.error(f"Could not read file: {e}")
             return
     else:
+<<<<<<< HEAD
         st.caption("No file — showing GMS-style demo manifest with mixed address quality.")
         df = DEMO_MANIFEST.copy()
+=======
+        if st.session_state.get("odoo_manifest_df") is not None:
+            df = st.session_state.odoo_manifest_df.copy()
+            st.info(f"📡 Using {len(df)} orders imported from Odoo ERP.")
+        else:
+            df = DEMO_MANIFEST.copy()
+>>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
 
     addr_col, lat_col, lng_col, weight_col = _detect_columns(df)
     ca, cl, cll = st.columns(3)
@@ -328,6 +379,12 @@ def render_manifest_triage():
         if k not in st.session_state:
             st.session_state[k] = None
 
+<<<<<<< HEAD
+=======
+    if "odoo_manifest_df" not in st.session_state:
+        st.session_state.odoo_manifest_df = None
+
+>>>>>>> 85421c627c1daa82468668491cded2d39c84d79d
     if st.button("🔍 Run Manifest Triage", type="primary"):
         result_df = df.copy()
         result_df["_lat_resolved"] = None if lat_col is None else result_df[lat_col].copy()
