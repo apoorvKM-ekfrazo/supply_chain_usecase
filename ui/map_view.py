@@ -365,3 +365,8 @@ def build_scenario_map(stops_df: pd.DataFrame, depot: dict) -> folium.Map:
     Same as the baseline map but without implying any routing has been attempted.
     """
     return build_baseline_map(stops_df, depot)
+
+
+
+
+

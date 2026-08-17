@@ -44,7 +44,7 @@ try:
 except ImportError:
     pass  # dotenv not installed; rely on environment variables directly
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 2 — Groq model catalogue with daily limits
@@ -61,8 +61,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 # For interactive demo use this is unlikely to matter.
 # ─────────────────────────────────────────────────────────────────────────────
 
-GROQ_MODELS = {
-    "llama-3.3-70b-versatile": {
+OPENAI_MODELS = {
+    "gpt-4o-mini": {
         "tpd": 100_000,
         "tpm": 6_000,
         "params": "70B",
@@ -191,7 +191,7 @@ def aggregate_by_model(records: list) -> dict:
 
     Returns a dict like:
     {
-      "llama-3.3-70b-versatile": {"calls": 8, "total_tokens": 40000, ...},
+      "gpt-4o-mini": {"calls": 8, "total_tokens": 40000, ...},
       "llama-3.1-8b-instant":    {"calls": 4, "total_tokens": 2000, ...},
     }
     """
@@ -269,7 +269,7 @@ def report_today():
     print()
     print(divider("═"))
     print(f"  🔋  Groq Token Budget — {today}")
-    print(f"      API key: {'✅ loaded from .env' if GROQ_API_KEY else '❌ not set (set GROQ_API_KEY in .env)'}")
+    print(f"      API key: {'✅ loaded from .env' if OPENAI_API_KEY else '❌ not set (set OPENAI_API_KEY in .env)'}")
     print(f"      Local log: {LOG_FILE}  ({len(records)} calls logged today)")
     print()
     print("  ⚠️  IMPORTANT: This estimate only covers calls made through this app.")
@@ -280,13 +280,13 @@ def report_today():
 
     # Report on each model that's relevant to our app
     relevant_models = [
-        "llama-3.3-70b-versatile",
+        "gpt-4o-mini",
         "llama-3.1-8b-instant",
         "mixtral-8x7b-32768",
     ]
 
     for model_name in relevant_models:
-        model_info  = GROQ_MODELS.get(model_name, {})
+        model_info  = OPENAI_MODELS.get(model_name, {})
         daily_limit = model_info.get("tpd", 100_000)
         used_today  = usage.get(model_name, {}).get("total_tokens", 0)
         remaining   = max(0, daily_limit - used_today)
@@ -323,7 +323,7 @@ def report_today():
         print(f"      {divider()}")
 
     # Summary row comparing the two models we actually use
-    used_70b  = usage.get("llama-3.3-70b-versatile", {}).get("total_tokens", 0)
+    used_70b  = usage.get("gpt-4o-mini", {}).get("total_tokens", 0)
     used_8b   = usage.get("llama-3.1-8b-instant",    {}).get("total_tokens", 0)
     rem_70b   = max(0, 100_000 - used_70b)
     rem_8b    = max(0, 500_000 - used_8b)
@@ -354,7 +354,7 @@ def report_models():
     print()
     print(f"  {'Model':<35} {'TPD':>8}  {'TPM':>7}  {'Params':<10}  Use in our app")
     print(f"  {divider('-', 35)} {'───────':>8}  {'──────':>7}  {'──────':<10}  ──────────────")
-    for name, info in GROQ_MODELS.items():
+    for name, info in OPENAI_MODELS.items():
         our_use = info.get("our_use", "")
         marker  = "◀ ACTIVE" if "our_use" in info and "()" in our_use else ""
         print(
@@ -410,8 +410,8 @@ def report_history():
         print(f"  {day}   {total:>7,} tokens across {calls} calls")
 
         for model, stats in sorted(by_model.items(), key=lambda x: -x[1]["total_tokens"]):
-            pct_of_limit = stats["total_tokens"] / GROQ_MODELS.get(model, {}).get("tpd", 100_000) * 100
-            short_model  = model.replace("llama-3.3-70b-versatile", "70B-versatile") \
+            pct_of_limit = stats["total_tokens"] / OPENAI_MODELS.get(model, {}).get("tpd", 100_000) * 100
+            short_model  = model.replace("gpt-4o-mini", "70B-versatile") \
                                 .replace("llama-3.1-8b-instant",    "8B-instant") \
                                 .replace("mixtral-8x7b-32768",      "mixtral-8x7b")
             print(f"      {short_model:<22} {stats['total_tokens']:>7,} tokens  "
@@ -436,11 +436,11 @@ def verify_key():
     This is useful when you get unexpected 401/403 errors — it confirms
     the key itself is the problem rather than your prompts or rate limits.
     """
-    if not GROQ_API_KEY:
-        print("\n  ❌  No API key found. Set GROQ_API_KEY in your .env file.\n")
+    if not OPENAI_API_KEY:
+        print("\n  ❌  No API key found. Set OPENAI_API_KEY in your .env file.\n")
         return
 
-    print(f"\n  🔑  Verifying API key (ends in ...{GROQ_API_KEY[-6:]})")
+    print(f"\n  🔑  Verifying API key (ends in ...{OPENAI_API_KEY[-6:]})")
     print(f"      Making a minimal test call to llama-3.1-8b-instant (~50 tokens)...")
 
     try:
@@ -450,7 +450,7 @@ def verify_key():
         return
 
     try:
-        client   = Groq(api_key=GROQ_API_KEY)
+        client   = Groq(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": "Reply with the single word: OK"}],
@@ -512,3 +512,8 @@ if __name__ == "__main__":
         print("    python check_tokens.py --history   → usage across all days")
         print("    python check_tokens.py --verify    → test if your API key works")
         print()
+
+
+
+
+

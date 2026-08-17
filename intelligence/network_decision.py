@@ -11,7 +11,7 @@ The panel answers one question: did the simulation validate the prediction?
 MEIO predicted adding Marathahalli Hub would save ₹8.4L per year.
 The Route Optimizer ran from two depots and produced actual metrics.
 This module computes the gap between prediction and reality, then uses
-Groq (Llama 3.3 70B) to give a plain-English verdict that a non-technical
+GPT-4o-mini to give a plain-English verdict that a non-technical
 operations manager can act on.
 
 The AI prompt is carefully structured to:
@@ -37,22 +37,22 @@ import requests
 from typing import Optional, Dict
 
 
-GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = "gpt-4o-mini"
 
 
 def _call_groq(prompt: str) -> Optional[str]:
-    """Call the Groq API and return the response text."""
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    """Call the OpenAI API and return the response text."""
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         return None
 
     try:
         resp = requests.post(
-            GROQ_URL,
+            OPENAI_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model":       GROQ_MODEL,
+                "model":       OPENAI_MODEL,
                 "max_tokens":  400,
                 "temperature": 0.3,   # low temperature for analytical consistency
                 "messages": [{"role": "user", "content": prompt}],
@@ -192,7 +192,7 @@ def compute_comparison(
 
 def generate_ai_verdict(comparison: dict) -> str:
     """
-    Call Groq/Llama to produce a plain-English verdict on the comparison.
+    Call GPT-4o-mini to produce a plain-English verdict on the comparison.
 
     Returns a string with the AI analysis, or a fallback rule-based verdict
     if the API key is not available.
@@ -279,3 +279,9 @@ CAVEAT: [One sentence on the most important thing the operations team should wat
         rec     = "RECOMMENDATION: Reject this location. Return to the Network Intelligence module and evaluate the next candidate."
         caveat  = "CAVEAT: This result may reflect the fleet split chosen by the solver being suboptimal — try running with a different vehicle-to-depot assignment."
     return f"{verdict}\n\n{rec}\n\n{caveat}"
+
+
+
+
+
+

@@ -164,3 +164,8 @@ def generate_forecasting_history() -> pd.DataFrame:
 
     st.session_state.forecast_history_df = df_hierarchy
     return df_hierarchy
+
+
+
+
+

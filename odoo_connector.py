@@ -218,3 +218,8 @@ if __name__ == "__main__":
             print(f"\n{df.to_string(index=False)}")
             print(f"\nColumns: {list(df.columns)}")
             print(f"Rows: {len(df)}")
+
+
+
+
+

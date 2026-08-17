@@ -3,7 +3,7 @@ intelligence/route_explainer.py
 --------------------------------
 LLM-powered explanation layer. Three stages:
   Stage 1 — Route Analyst (pure Python): produces structured diagnosis dicts
-  Stage 2 — LLM Narrator (Groq): converts facts to plain English
+  Stage 2 — LLM Narrator (OpenAI): converts facts to plain English
   Stage 3 — Streamlit display (in app.py): renders the explanations
 
 Key improvement over v1:
@@ -22,8 +22,8 @@ import pandas as pd
 
 AVG_SPEED_KMH    = 25.0
 SHIFT_START_HOUR = 8
-GROQ_MODEL       = "llama-3.3-70b-versatile"
-GROQ_API_URL     = "https://api.groq.com/openai/v1/chat/completions"
+OPENAI_MODEL       = "gpt-4o-mini"
+OPENAI_API_URL     = "https://api.openai.com/v1/chat/completions"
 
 
 def _haversine_km(lat1, lng1, lat2, lng2) -> float:
@@ -226,15 +226,15 @@ def analyse_overall_result(
 def _call_groq(prompt: str, system: str) -> str:
     try:
         import requests
-        api_key = os.environ.get("GROQ_API_KEY", "")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            return "[GROQ_API_KEY not set — add your key in the sidebar to enable explanations]"
+            return "[OPENAI_API_KEY not set — add your key in the sidebar to enable explanations]"
 
         resp = requests.post(
-            GROQ_API_URL,
+            OPENAI_API_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model":       GROQ_MODEL,
+                "model":       OPENAI_MODEL,
                 "max_tokens":  450,
                 "temperature": 0.3,
                 "messages": [
@@ -381,3 +381,10 @@ def generate_all_explanations(
         "summary":  overall_summary,
         "unserved": unserved_list,
     }
+
+
+
+
+
+
+

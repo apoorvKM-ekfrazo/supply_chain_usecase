@@ -496,3 +496,8 @@ def render_intercity_optimizer():
             "industry research as of 2026. Actual rates vary by weight slab, carrier, season, "
             "fuel surcharge, and GST. Figures used in revenue projections are mid-range estimates."
         )
+
+
+
+
+

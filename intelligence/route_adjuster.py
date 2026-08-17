@@ -351,3 +351,8 @@ def get_vehicle_stop_table(
         })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+
+
+

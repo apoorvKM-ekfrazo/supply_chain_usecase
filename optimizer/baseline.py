@@ -208,3 +208,8 @@ def run_baseline(
         "total_stops_served":  total_stops_served,
         "method":              "baseline_nearest_neighbour",
     }
+
+
+
+
+

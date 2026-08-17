@@ -215,3 +215,8 @@ def get_weekly_projection(daily_savings_inr: float) -> Dict:
         "monthly": format_inr(monthly),
         "annual":  format_inr(annual),
     }
+
+
+
+
+

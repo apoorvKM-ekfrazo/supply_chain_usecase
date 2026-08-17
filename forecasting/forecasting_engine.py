@@ -110,3 +110,8 @@ def run_forecast(history_df: pd.DataFrame) -> dict:
 
     st.session_state.forecast_result = result
     return result
+
+
+
+
+

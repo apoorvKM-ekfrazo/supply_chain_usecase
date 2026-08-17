@@ -206,3 +206,8 @@ print(f"""
 You can now run the DeliveryOS app and connect to Odoo.
 In Odoo, go to Inventory → Transfers to see the created orders.
 """)
+
+
+
+
+

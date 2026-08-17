@@ -305,3 +305,8 @@ def format_inr(amount: float) -> str:
         return f"₹{amount:,.0f}"
     else:
         return f"₹{amount:.0f}"
+
+
+
+
+

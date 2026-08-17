@@ -202,3 +202,8 @@ def build_utilisation_chart_data(util_df: pd.DataFrame) -> pd.DataFrame:
     working = util_df[util_df["date"].apply(lambda d: d.weekday() < 5)].copy()
     working["date_str"] = working["date"].astype(str)
     return working[["date_str", "vehicle_name", "utilisation_pct", "load_kg", "km_driven"]]
+
+
+
+
+

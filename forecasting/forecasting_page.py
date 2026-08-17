@@ -192,11 +192,12 @@ def render_forecasting_page():
         unsafe_allow_html=True,
     )
     # ── AI interpretation of the forecast results ─────────────────────────────
-    # Generated once per session and cached. Calls Groq with the zone-level
+    # Generated once per session and cached. Calls openai with the zone-level
     # growth summary and asks for a plain-English briefing for a logistics exec.
     if "forecast_ai_summary" not in st.session_state:
         try:
-            from groq import Groq
+            
+            from openai import OpenAI
             import os
             _h = forecast_res["history"]
             _f = forecast_res["forecast"]
@@ -218,7 +219,7 @@ def render_forecasting_page():
                 "with specific numbers. State what this means for warehouse planning. "
                 "No jargon. No bullet points."
             )
-            client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
             resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
@@ -528,3 +529,8 @@ def render_forecasting_page():
                 "✅ Forecast applied. Switch to **Network Intelligence** and click "
                 "**Run Analysis** to see the updated warehouse recommendation."
             )
+
+
+
+
+

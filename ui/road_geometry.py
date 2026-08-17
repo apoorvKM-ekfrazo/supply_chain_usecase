@@ -548,3 +548,8 @@ def estimate_call_count(result: dict) -> int:
     active_vehicles = sum(1 for r in result.get("routes", {}).values() if r.get("stop_sequence"))
     # If any vehicle has new segments, we need one call for that vehicle
     return min(active_vehicles, new_count)
+
+
+
+
+

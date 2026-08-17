@@ -189,3 +189,8 @@ def clear_history() -> None:
     """Remove the alert history file. Used by the Reset button."""
     if ALERT_HISTORY_FILE.exists():
         ALERT_HISTORY_FILE.unlink()
+
+
+
+
+

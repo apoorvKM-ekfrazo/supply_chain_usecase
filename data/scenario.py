@@ -243,3 +243,8 @@ if __name__ == "__main__":
 
     print(f"\n── Total weight across all stops: {stops['weight_kg'].sum():.1f} kg")
     print(f"── Fleet total capacity: {vehicles['capacity_kg'].sum()} kg")
+
+
+
+
+

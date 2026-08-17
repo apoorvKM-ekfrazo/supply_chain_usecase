@@ -31,7 +31,7 @@ import os as _os, requests as _req
 
 def _llm_call(user_prompt: str, cache_key: str, max_tokens: int = 180) -> str | None:
     """
-    Single LLM call: OpenAI gpt-4o-mini first, Groq llama-3.3-70b fallback.
+    Single LLM call: OpenAI gpt-4o-mini.
     Result cached in st.session_state[cache_key] so each card calls the API once.
     """
     if cache_key in st.session_state:
@@ -64,14 +64,14 @@ def _llm_call(user_prompt: str, cache_key: str, max_tokens: int = 180) -> str | 
             pass
 
     if not _res:
-        _gk = _os.environ.get("GROQ_API_KEY", "").strip()
+        _gk = _os.environ.get("OPENAI_API_KEY", "").strip()
         if _gk:
             try:
                 _r = _req.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
+                    "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {_gk}",
                              "Content-Type": "application/json"},
-                    json={"model": "llama-3.3-70b-versatile",
+                    json={"model": "gpt-4o-mini",
                           "max_tokens": max_tokens, "temperature": 0.3,
                           "messages": [{"role": "system", "content": _sys}] + _msgs},
                     timeout=15,
@@ -766,8 +766,8 @@ def render_load_copilot_sidebar():
         answer = _llm_call(user, _ck, max_tokens=300)
         if not answer:
             answer = (
-                "I need either an OpenAI or Groq API key to answer that. "
-                "Add OPENAI_API_KEY or GROQ_API_KEY to your .env file."
+                "I need an OpenAI API key to answer that. "
+                "Add OPENAI_API_KEY or OPENAI_API_KEY to your .env file."
             )
 
         st.session_state.lo_chat.append({"role": "user", "content": question})
@@ -1325,3 +1325,10 @@ def render_load_optimizer():
             "No vehicle in the fleet can carry a single item at these dimensions. "
             "The item is larger than every vehicle's cargo bay — please check the dimensions."
         )
+
+
+
+
+
+
+
